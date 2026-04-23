@@ -182,9 +182,11 @@ export function validate(rows, params) {
   const eanToItem = new Map(); // ean -> itemNo
   const itemToEan = new Map(); // itemNo -> ean
   const itemNoFirstSeen = new Map(); // itemNo -> rowIdx (for "duplicate without customerID")
+  const itemCustSeen = new Map(); // "itemNo|cust" -> rowIdx (for same-customer duplicate check)
   const duplicateTriplets = [];
   const eanConflicts = [];
   const itemEanMismatches = [];
+  const itemCustDuplicates = []; // same Article no. used twice with same Customer ID
 
   rows.forEach((r, idx) => {
     const itemNo = String(r.itemNo || "").trim();
@@ -200,6 +202,25 @@ export function validate(rows, params) {
         }
       } else {
         itemNoFirstSeen.set(itemNo, idx);
+      }
+
+      // NEW RULE: Article no. must be unique per Customer ID.
+      // Duplicates are allowed only when the Customer ID differs
+      // (to support multi-customer/multi-tier pricing).
+      if (cust !== "") {
+        const itemCustKey = `${itemNo}|${cust}`;
+        if (itemCustSeen.has(itemCustKey)) {
+          const firstIdx = itemCustSeen.get(itemCustKey);
+          markCell(firstIdx, "itemNo");
+          markCell(firstIdx, "customerId");
+          markCell(idx, "itemNo");
+          markCell(idx, "customerId");
+          itemCustDuplicates.push(
+            `Row ${idx + 2}: Article no. "${itemNo}" + Customer ID "${cust}" already used on row ${firstIdx + 2}`
+          );
+        } else {
+          itemCustSeen.set(itemCustKey, idx);
+        }
       }
     }
 
@@ -238,6 +259,14 @@ export function validate(rows, params) {
     }
   });
 
+  if (itemCustDuplicates.length) {
+    const sample = itemCustDuplicates.slice(0, 15).map((d) => "  " + d).join("\n");
+    const more = itemCustDuplicates.length > 15 ? `\n  …and ${itemCustDuplicates.length - 15} more` : "";
+    errors.push(
+      `Duplicate Article no. + Customer ID combinations found (${itemCustDuplicates.length}). ` +
+        `Article no. must be unique per Customer ID:\n${sample}${more}`
+    );
+  }
   if (duplicateTriplets.length) {
     errors.push("Duplicate ItemNo + CustomerID + EAN combinations:\n  " + duplicateTriplets.join("\n  "));
   }
