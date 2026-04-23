@@ -28,7 +28,7 @@ export const NA_MARKER = "__NA__";
 // - `mandatory`: if true, the file is rejected when no matching header is found.
 const HEADER_MAP = {
   id:               { display: "ID",                          aliases: ["id"],                                         mandatory: false },
-  recordType:       { display: "Type",                        aliases: ["type"],                                       mandatory: true  }, // structurally required: parser uses empty Type as end-of-data signal (matches VBA `Do Until Cells(Z, 2) = ""`)
+  recordType:       { display: "Type",                        aliases: ["type"],                                       mandatory: false },
   descDE:           { display: "Item name (German)",          aliases: ["item name (german)", "item name german"],     mandatory: false },
   descFR:           { display: "Item name (French)",          aliases: ["item name (french)", "item name french"],     mandatory: false },
   descIT:           { display: "Item name (Italian)",         aliases: ["item name (italian)", "item name italian"],   mandatory: false },
@@ -164,9 +164,12 @@ export function parseReport1145(aoa) {
   for (let r = HEADER_ROW_INDEX + 1; r < aoa.length; r++) {
     const src = aoa[r] || [];
 
-    // Stop at the first row with empty "Type" — matches VBA `Do Until Cells(Z, 2) = ""`.
-    const typeVal = getCell(src, resolved, "recordType");
-    if (typeVal === "" || typeVal === 0 || typeVal === NA_MARKER) break;
+    // Stop at the first row with an empty Article no. — this is the end-of-data signal.
+    // (Previously this was "Type", but Type is no longer mandatory; Article no. is
+    // always present and is a more reliable stop marker.)
+    const itemNoRaw = getCell(src, resolved, "itemNo");
+    const itemNoStr = String(itemNoRaw).trim();
+    if (itemNoStr === "" || itemNoRaw === NA_MARKER) break;
 
     // Price logic (ported from VBA)
     const priceOU = toNumericOrEmpty(src[resolved.priceUnit]);
