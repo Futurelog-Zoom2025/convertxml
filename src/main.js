@@ -24,7 +24,41 @@ const els = {
   previewCard: $("#previewCard"),
   previewSummary: $("#previewSummary"),
   previewTable: $("#previewTable"),
+  loadingOverlay: $("#loadingOverlay"),
+  loadingMsg: $("#loadingMsg"),
+  loadingSub: $("#loadingSub"),
 };
+
+// Loading overlay helpers. `show` blocks paint briefly; use `runWithLoading`
+// to wrap heavy CPU work so the overlay actually appears before work starts.
+function showLoading(msg, sub) {
+  if (msg) els.loadingMsg.textContent = msg;
+  if (sub !== undefined) els.loadingSub.textContent = sub;
+  els.loadingOverlay.classList.remove("hidden");
+}
+function hideLoading() {
+  els.loadingOverlay.classList.add("hidden");
+}
+// Wraps a synchronous heavy task so the loading overlay has time to paint
+// before the task blocks the main thread.
+function runWithLoading(msg, sub, fn) {
+  return new Promise((resolve, reject) => {
+    showLoading(msg, sub);
+    // Double rAF ensures the overlay is actually painted before heavy work.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        try {
+          const result = fn();
+          hideLoading();
+          resolve(result);
+        } catch (err) {
+          hideLoading();
+          reject(err);
+        }
+      });
+    });
+  });
+}
 
 // In-memory state
 const state = {
@@ -98,12 +132,21 @@ async function handleFile(file) {
 
   try {
     const data = await file.arrayBuffer();
-    const wb = XLSX.read(data, { type: "array", cellDates: true });
-    const firstSheet = wb.SheetNames[0];
-    const ws = wb.Sheets[firstSheet];
-    // header:1 -> array of arrays; defval:"" to keep column alignment on empty cells
-    const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: true });
-    const rows = parseReport1145(aoa);
+
+    // Parsing large Excel files can block the main thread for several seconds.
+    // Show a loading overlay so users know the app hasn't frozen.
+    const rows = await runWithLoading(
+      "Parsing Excel file…",
+      "This may take a moment for large files.",
+      () => {
+        const wb = XLSX.read(data, { type: "array", cellDates: true });
+        const firstSheet = wb.SheetNames[0];
+        const ws = wb.Sheets[firstSheet];
+        const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: true });
+        return parseReport1145(aoa);
+      }
+    );
+
     if (rows.length === 0) {
       throw new Error("No data rows found below the header in this file.");
     }
@@ -193,10 +236,20 @@ function renderPreview(rows, invalidCells = new Map()) {
 
 // --------------- Validate / Generate ---------------
 
-function runValidation(silent = false) {
+async function runValidation(silent = false) {
   const params = getParams();
-  const { errors, warnings, invalidCells } = validate(state.rows, params);
-  renderPreview(state.rows, invalidCells);
+
+  // For large files, validation + preview rerender can take several seconds.
+  const result = await runWithLoading(
+    "Validating…",
+    `Checking ${state.rows.length.toLocaleString()} row${state.rows.length === 1 ? "" : "s"} against all rules.`,
+    () => {
+      const v = validate(state.rows, params);
+      renderPreview(state.rows, v.invalidCells);
+      return v;
+    }
+  );
+  const { errors, warnings } = result;
 
   if (errors.length) {
     const list = errors.map((e) => `<li>${escapeHtml(e).replace(/\n/g, "<br>")}</li>`).join("");
@@ -230,10 +283,16 @@ function downloadBlob(content, filename, mimeType) {
   }, 100);
 }
 
-function runGenerate() {
-  if (!runValidation(true)) return;
+async function runGenerate() {
+  const ok = await runValidation(true);
+  if (!ok) return;
   const params = getParams();
-  const { xml, filename } = generateXml(state.rows, params);
+  const result = await runWithLoading(
+    "Generating XML…",
+    `Writing ${state.rows.length.toLocaleString()} article${state.rows.length === 1 ? "" : "s"} to XML.`,
+    () => generateXml(state.rows, params)
+  );
+  const { xml, filename } = result;
   // Prepend UTF-8 BOM so some downstream tools (and Excel) detect encoding correctly,
   // and keep the raw XML declaration intact.
   downloadBlob("\uFEFF" + xml, filename, "application/xml;charset=utf-8");
