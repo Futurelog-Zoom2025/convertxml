@@ -4,6 +4,18 @@
 import { VALID_UNITS, VALID_COUNTRIES, VALID_LANGUAGES } from "./referenceData.js";
 import { NA_MARKER } from "./reportParser.js";
 
+// Convert 0-based index in the parsed rows array to the 1-based Excel row number
+// that the user sees in their spreadsheet.
+// Report 1145 layout:
+//   Rows 1-3: metadata ("Create import list (PRI)" + blanks)
+//   Row 4:    column headers
+//   Row 5+:   data
+// So parsed rows[0] corresponds to Excel row 5: idx + 5.
+const DATA_ROW_OFFSET = 5;
+function excelRow(idx) {
+  return idx + DATA_ROW_OFFSET;
+}
+
 // Tabelle1 columns that are mandatory.
 // VBA:  For col = 1 To lastCol: If Trim(Cells(2, col).Value) <> "" And col <> 20 Then add to mandatory
 // Column 20 (specUrl / T) is excluded. In practice Report 1145 never populates columns 4, 5, 16, 21, 22, 23
@@ -61,7 +73,7 @@ function isNA(v) {
 export function validate(rows, params) {
   const errors = [];
   const warnings = [];
-  // rowIdx is 0-based in `rows`; the user-facing row number in the VBA is rowIdx + 2
+  // rowIdx is 0-based in `rows`; the user-facing row number in Excel is excelRow(idx) (row 5 onward).
   const invalidCells = new Map();
 
   const markCell = (rowIdx, colKey) => {
@@ -143,11 +155,11 @@ export function validate(rows, params) {
         // Preview shows the computed `availability` column, not `leadTimeRaw`.
         // Mark both so the row visibly highlights in the preview.
         if (k === "leadTimeRaw") markCell(idx, "availability");
-        naDetails.push({ row: idx + 2, col: KEY_LABELS[k] || k });
+        naDetails.push({ row: excelRow(idx), col: KEY_LABELS[k] || k });
       } else if (isBlank(r[k])) {
         markCell(idx, k);
         if (k === "leadTimeRaw") markCell(idx, "availability");
-        blankDetails.push({ row: idx + 2, col: KEY_LABELS[k] || k });
+        blankDetails.push({ row: excelRow(idx), col: KEY_LABELS[k] || k });
       }
     }
   });
@@ -197,7 +209,7 @@ export function validate(rows, params) {
         if (cust === "") {
           markCell(idx, "itemNo");
           markCell(idx, "customerId");
-          errors.push(`Row ${idx + 2}: Item No "${itemNo}" repeats without a Customer ID.`);
+          errors.push(`Row ${excelRow(idx)}: Item No "${itemNo}" repeats without a Customer ID.`);
         }
       } else {
         itemNoFirstSeen.set(itemNo, idx);
@@ -215,7 +227,7 @@ export function validate(rows, params) {
           markCell(idx, "itemNo");
           markCell(idx, "customerId");
           itemCustDuplicates.push(
-            `Row ${idx + 2}: Article no. "${itemNo}" + Customer ID "${cust}" already used on row ${firstIdx + 2}`
+            `Row ${excelRow(idx)}: Article no. "${itemNo}" + Customer ID "${cust}" already used on row ${excelRow(firstIdx)}`
           );
         } else {
           itemCustSeen.set(itemCustKey, idx);
@@ -229,7 +241,7 @@ export function validate(rows, params) {
         const firstIdx = tripletSeen.get(key);
         markCell(firstIdx, "itemNo"); markCell(firstIdx, "ean"); markCell(firstIdx, "customerId");
         markCell(idx, "itemNo"); markCell(idx, "ean"); markCell(idx, "customerId");
-        duplicateTriplets.push(`Row ${idx + 2}: ItemNo ${itemNo}, CustID ${cust}, EAN ${ean}`);
+        duplicateTriplets.push(`Row ${excelRow(idx)}: ItemNo ${itemNo}, CustID ${cust}, EAN ${ean}`);
       } else {
         tripletSeen.set(key, idx);
       }
@@ -238,7 +250,7 @@ export function validate(rows, params) {
         if (eanToItem.get(ean) !== itemNo) {
           markCell(idx, "ean");
           eanConflicts.push(
-            `Row ${idx + 2}: EAN ${ean} used with different Item No (${itemNo} vs ${eanToItem.get(ean)})`
+            `Row ${excelRow(idx)}: EAN ${ean} used with different Item No (${itemNo} vs ${eanToItem.get(ean)})`
           );
         }
       } else {
@@ -249,7 +261,7 @@ export function validate(rows, params) {
         if (itemToEan.get(itemNo) !== ean) {
           markCell(idx, "itemNo");
           itemEanMismatches.push(
-            `Row ${idx + 2}: Item No ${itemNo} used with different EAN (${ean} vs ${itemToEan.get(itemNo)})`
+            `Row ${excelRow(idx)}: Item No ${itemNo} used with different EAN (${ean} vs ${itemToEan.get(itemNo)})`
           );
         }
       } else {
@@ -283,11 +295,11 @@ export function validate(rows, params) {
     const cu = String(r.cu || "").trim();
     if (ou !== "" && !VALID_UNITS.has(ou)) {
       markCell(idx, "ou");
-      badUnits.push(`Row ${idx + 2}: OU "${ou}"`);
+      badUnits.push(`Row ${excelRow(idx)}: OU "${ou}"`);
     }
     if (cu !== "" && !VALID_UNITS.has(cu)) {
       markCell(idx, "cu");
-      badUnits.push(`Row ${idx + 2}: CU "${cu}"`);
+      badUnits.push(`Row ${excelRow(idx)}: CU "${cu}"`);
     }
   });
   if (badUnits.length) {
@@ -299,7 +311,7 @@ export function validate(rows, params) {
     const c = String(r.origin || "").trim();
     if (c !== "" && !VALID_COUNTRIES.has(c)) {
       markCell(idx, "origin");
-      badCountries.push(`Row ${idx + 2}: "${c}"`);
+      badCountries.push(`Row ${excelRow(idx)}: "${c}"`);
     }
   });
   if (badCountries.length) {
@@ -317,9 +329,9 @@ export function validate(rows, params) {
     if (typeof p === "number") {
       if (p < 0) {
         markCell(idx, "priceOU");
-        negativePrices.push(`Row ${idx + 2}: Article "${r.itemNo}" has price ${p}`);
+        negativePrices.push(`Row ${excelRow(idx)}: Article "${r.itemNo}" has price ${p}`);
       } else if (p === 0) {
-        zeroPriceRows.push(idx + 2);
+        zeroPriceRows.push(excelRow(idx));
       }
     }
   });
