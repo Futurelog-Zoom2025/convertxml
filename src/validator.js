@@ -15,7 +15,7 @@ import { NA_MARKER } from "./reportParser.js";
 const EXCLUDED_MANDATORY_KEYS = new Set(["specUrl"]); // col 20 in VBA
 
 const ROW_KEYS = [
-  "pos","recordType","descDE","descFR","descIT","descGB","descExtra",
+  "pos","descDE","descFR","descIT","descGB","descExtra",
   "itemNo","ean","manArtId","manLiefID","ou","cu","cuou","priceOU",
   "priceLevel","origin","customsNo","availability","leadTimeRaw","specUrl","offerStart",
   "offerEnd","customerId",
@@ -24,7 +24,6 @@ const ROW_KEYS = [
 // Human-readable labels for error messages
 const KEY_LABELS = {
   pos: "Pos",
-  recordType: "Record Type",
   descDE: "German description",
   descFR: "French description",
   descIT: "Italian description",
@@ -305,6 +304,40 @@ export function validate(rows, params) {
   });
   if (badCountries.length) {
     errors.push("Invalid country codes (not in Country_List):\n  " + badCountries.slice(0, 50).join("\n  "));
+  }
+
+  // Step 5: Price checks
+  //   - Negative prices: BLOCKING ERROR
+  //   - Zero prices: WARNING (non-blocking) — might be intentional (free samples, placeholder, etc.)
+  //     but usually indicates a missing price column in the source file.
+  const negativePrices = [];
+  const zeroPriceRows = [];
+  rows.forEach((r, idx) => {
+    const p = r.priceOU;
+    if (typeof p === "number") {
+      if (p < 0) {
+        markCell(idx, "priceOU");
+        negativePrices.push(`Row ${idx + 2}: Article "${r.itemNo}" has price ${p}`);
+      } else if (p === 0) {
+        zeroPriceRows.push(idx + 2);
+      }
+    }
+  });
+
+  if (negativePrices.length) {
+    const sample = negativePrices.slice(0, 15).map((s) => "  " + s).join("\n");
+    const more = negativePrices.length > 15 ? `\n  …and ${negativePrices.length - 15} more` : "";
+    errors.push(
+      `Negative prices are not allowed. Found ${negativePrices.length} row${negativePrices.length === 1 ? "" : "s"} with a price below zero:\n${sample}${more}`
+    );
+  }
+
+  if (zeroPriceRows.length) {
+    const sample = zeroPriceRows.slice(0, 10).join(", ");
+    const more = zeroPriceRows.length > 10 ? `, …and ${zeroPriceRows.length - 10} more` : "";
+    warnings.push(
+      `${zeroPriceRows.length} row${zeroPriceRows.length === 1 ? "" : "s"} have a final price of 0 (row${zeroPriceRows.length === 1 ? "" : "s"}: ${sample}${more}). This usually means a price column is missing — please double-check.`
+    );
   }
 
   // Warning: all availability == 0
