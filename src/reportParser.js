@@ -27,8 +27,8 @@ export const NA_MARKER = "__NA__";
 //    with <br> tags stripped). First match wins.
 // - `mandatory`: if true, the file is rejected when no matching header is found.
 const HEADER_MAP = {
-  id:               { display: "ID",                          aliases: ["id"],                                         mandatory: false },
-  recordType:       { display: "Type",                        aliases: ["type"],                                       mandatory: false },
+  // ID and Type columns were previously read but never used. Removed for clarity.
+  // The parser uses an empty Article no. as the end-of-data signal.
   descDE:           { display: "Item name (German)",          aliases: ["item name (german)", "item name german"],     mandatory: false },
   descFR:           { display: "Item name (French)",          aliases: ["item name (french)", "item name french"],     mandatory: false },
   descIT:           { display: "Item name (Italian)",         aliases: ["item name (italian)", "item name italian"],   mandatory: false },
@@ -49,6 +49,7 @@ const HEADER_MAP = {
   specUrl:          { display: "Item link supplier",          aliases: ["item link supplier", "spec url", "supplier link"], mandatory: false },
   offerStart:       { display: "Start of special offer",      aliases: ["start of special offer", "offer start"],      mandatory: false },
   offerEnd:         { display: "End of special offer",        aliases: ["end of special offer", "offer end"],          mandatory: false },
+  customerId:       { display: "Customer ID",                 aliases: ["customer id", "customerid", "custid", "customer no.", "customer no", "customer number"], mandatory: false },
 };
 
 // Normalize a header string so minor differences don't break matching.
@@ -192,7 +193,6 @@ export function parseReport1145(aoa) {
 
     const row = {
       pos: rows.length + 1,
-      recordType: getCell(src, resolved, "recordType"),
       descDE: getCell(src, resolved, "descDE"),
       descFR: getCell(src, resolved, "descFR"),
       descIT: getCell(src, resolved, "descIT"),
@@ -214,7 +214,18 @@ export function parseReport1145(aoa) {
       specUrl: getCell(src, resolved, "specUrl"),
       offerStart: getCell(src, resolved, "offerStart"),
       offerEnd: getCell(src, resolved, "offerEnd"),
-      customerId: "0000",
+      // Customer ID: read from the source file if that column is present & populated.
+      // Otherwise default to "0000" (base price / core entry).
+      customerId: (() => {
+        const raw = getCell(src, resolved, "customerId");
+        if (raw === "" || raw === null || raw === undefined || raw === NA_MARKER) return "0000";
+        // Preserve leading zeros if user typed a numeric value (e.g. 1 -> "0001")
+        // but only if the value is all-numeric; otherwise take string as-is.
+        const s = String(raw).trim();
+        if (s === "") return "0000";
+        if (/^\d+$/.test(s) && s.length < 4) return s.padStart(4, "0");
+        return s;
+      })(),
     };
     rows.push(row);
   }
