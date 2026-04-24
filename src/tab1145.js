@@ -87,6 +87,11 @@ export function initR1145Tab() {
     els.fileInfo.innerHTML = "";
     els.previewCard.classList.add("hidden");
     companyPicker.reset();
+    // Step 3 — XML Parameters & Generate fields. Clear user inputs back to
+    // their initial state so the form is fully blank after a reset.
+    els.supplierNo.value = "";
+    els.validityDate.value = "";
+    els.language.value = "TH"; // default matches the HTML's `<option selected>` default
     setGenerateReady("empty");
     clearStatus();
   }
