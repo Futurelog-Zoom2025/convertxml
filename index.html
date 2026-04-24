@@ -104,6 +104,29 @@
 
       <!-- ─────────── TAB 2: P2P ─────────── -->
       <div class="tab-panel" id="panelP2P" role="tabpanel">
+        <!-- Options — not a numbered step, these are global settings that affect how the upload is parsed -->
+        <section class="card options-card">
+          <h2 class="options-title">Options</h2>
+          <div class="toggle-row">
+            <label class="tgl" id="p2pTglNewPrice">
+              <input type="checkbox" id="p2pNewPriceCheckbox" checked />
+              <span class="tgl-sw"></span>
+              <span class="tgl-label">
+                The P2P file has a separate "NEW PRICE" column
+                <small>When ON, pull the new price from new price column. When OFF, the price will come from Price / Order unit column.</small>
+              </span>
+            </label>
+            <label class="tgl" id="p2pTglOpenLead">
+              <input type="checkbox" id="p2pOpenLeadCheckbox" />
+              <span class="tgl-sw"></span>
+              <span class="tgl-label">
+                Open lead time when a new price exists
+                <small>When ON, any row with a new price &gt; 1 has its lead time set to 1 and is flagged "Open lead time".</small>
+              </span>
+            </label>
+          </div>
+        </section>
+
         <section class="card">
           <div class="card-header-row">
             <h2><span class="step">1</span> Upload the P2P file from the hotel</h2>
@@ -155,10 +178,6 @@
             </p>
             <pre class="hdr-box" id="p2pHdrBox"></pre>
             <button type="button" id="p2pHdrCopyBtn" class="btn btn-ghost btn-sm">Copy to clipboard</button>
-            <p class="muted small" style="margin: 10px 0 0; padding-top:8px; border-top: 1px dashed var(--border);">
-              <strong>Required columns:</strong> Article No., and either Price / Order unit or NEW PRICE (based on the toggle below).<br>
-              <strong>Row count key:</strong> Rows are counted by the Article No. column — blank Article No. = end of data.
-            </p>
           </div>
         </section>
 
@@ -175,28 +194,7 @@
           <div id="p2pR1145FileInfo" class="file-info hidden"></div>
         </section>
 
-        <section class="card">
-          <h2><span class="step">3</span> Lookup options</h2>
-          <div class="toggle-row">
-            <label class="tgl" id="p2pTglNewPrice">
-              <input type="checkbox" id="p2pNewPriceCheckbox" checked />
-              <span class="tgl-sw"></span>
-              <span class="tgl-label">
-                The P2P file has a separate "NEW PRICE" column
-                <small>When ON, pull the new price from new price column. When OFF, the price will come from Price / Order unit column.</small>
-              </span>
-            </label>
-            <label class="tgl" id="p2pTglOpenLead">
-              <input type="checkbox" id="p2pOpenLeadCheckbox" />
-              <span class="tgl-sw"></span>
-              <span class="tgl-label">
-                Open lead time when a new price exists
-                <small>When ON, any row with a new price &gt; 1 has its lead time set to 1 and is flagged "Open lead time".</small>
-              </span>
-            </label>
-          </div>
-          <div id="p2pMergeStatus" class="status hidden"></div>
-        </section>
+        <div id="p2pMergeStatus" class="status hidden" style="margin-bottom:20px"></div>
 
         <section class="card hidden" id="p2pPreviewCard">
           <div class="preview-header">
@@ -204,10 +202,15 @@
               <h2 style="margin-bottom:4px">Data Preview</h2>
               <p class="muted small" id="p2pPreviewSummary" style="margin:0"></p>
             </div>
-            <button type="button" id="p2pShowFullBtn" class="btn btn-ghost btn-sm">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px"><path d="M3 8V3h5M21 8V3h-5M3 16v5h5M21 16v5h-5"/></svg>
-              Show Full Data
-            </button>
+            <div class="preview-controls">
+              <select id="p2pStatusFilter" class="status-filter" title="Filter by status">
+                <option value="__all__">All statuses</option>
+              </select>
+              <button type="button" id="p2pShowFullBtn" class="btn btn-ghost btn-sm">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px"><path d="M3 8V3h5M21 8V3h-5M3 16v5h5M21 16v5h-5"/></svg>
+                Show Full Data
+              </button>
+            </div>
           </div>
           <div class="preview-table-wrap">
             <table id="p2pPreviewTable" class="preview-table"></table>
@@ -220,7 +223,7 @@
         </section>
 
         <section class="card">
-          <h2><span class="step">4</span> XML Parameters &amp; Generate</h2>
+          <h2><span class="step">3</span> XML Parameters &amp; Generate</h2>
           <div class="grid">
             <label>
               <span>WebShop Company ID <em>(select one or more)</em></span>
