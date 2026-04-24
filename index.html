@@ -31,6 +31,7 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="icon-lg"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
               <p><strong>Click to select</strong> or drag &amp; drop a <code>.xls</code> / <code>.xlsx</code> file</p>
               <p class="muted small">The file is processed entirely in your browser — nothing is uploaded to any server.</p>
+              <p class="muted small lang-note">Accepts: EN, TH, VN</p>
             </div>
           </div>
           <div id="fileInfo" class="file-info hidden"></div>
@@ -164,6 +165,7 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="icon-lg"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
               <p><strong>Click to select</strong> or drag &amp; drop the P2P <code>.xls</code> / <code>.xlsx</code> file</p>
               <p class="muted small">Processed entirely in your browser — nothing is uploaded.</p>
+              <p class="muted small lang-note">Accepts: EN, VN</p>
             </div>
           </div>
           <div id="p2pFileInfo" class="file-info hidden"></div>
@@ -189,6 +191,7 @@
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="icon-lg"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
               <p><strong>Click to select</strong> or drag &amp; drop the Report 1145 file</p>
               <p class="muted small">Used to fill in descriptions, units, origin, etc. that the P2P file doesn't include.</p>
+              <p class="muted small lang-note">Accepts: EN, TH, VN</p>
             </div>
           </div>
           <div id="p2pR1145FileInfo" class="file-info hidden"></div>
@@ -202,15 +205,10 @@
               <h2 style="margin-bottom:4px">Data Preview</h2>
               <p class="muted small" id="p2pPreviewSummary" style="margin:0"></p>
             </div>
-            <div class="preview-controls">
-              <select id="p2pStatusFilter" class="status-filter" title="Filter by status">
-                <option value="__all__">All statuses</option>
-              </select>
-              <button type="button" id="p2pShowFullBtn" class="btn btn-ghost btn-sm">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px"><path d="M3 8V3h5M21 8V3h-5M3 16v5h5M21 16v5h-5"/></svg>
-                Show Full Data
-              </button>
-            </div>
+            <button type="button" id="p2pShowFullBtn" class="btn btn-ghost btn-sm">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px"><path d="M3 8V3h5M21 8V3h-5M3 16v5h5M21 16v5h-5"/></svg>
+              Show Full Data
+            </button>
           </div>
           <div class="preview-table-wrap">
             <table id="p2pPreviewTable" class="preview-table"></table>
