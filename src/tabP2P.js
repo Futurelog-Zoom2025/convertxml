@@ -40,6 +40,7 @@ export function initP2PTab() {
     // Options
     newPriceCheckbox: $("#p2pNewPriceCheckbox"),
     openLeadCheckbox: $("#p2pOpenLeadCheckbox"),
+    newPriceWarning:  $("#p2pNewPriceWarning"),
     mergeStatus:      $("#p2pMergeStatus"),
     // Preview
     previewCard:    $("#p2pPreviewCard"),
@@ -120,7 +121,21 @@ export function initP2PTab() {
     els.hdrModal.classList.add("hidden");
     companyPicker.reset();
     clearStatus();
+    updateNewPriceWarning();
     setGenerateReady("empty");
+  }
+
+  // Shows/hides the "file has NEW PRICE column but toggle is OFF" warning.
+  // Called after any parse, after toggle changes, and on reset. The condition
+  // is purely derived from current state so this is always safe to invoke.
+  function updateNewPriceWarning() {
+    const toggleOff = !els.newPriceCheckbox.checked;
+    const fileHasIt = !!state.p2pParsed?.hasNewPriceColumn;
+    if (toggleOff && fileHasIt) {
+      els.newPriceWarning.classList.remove("hidden");
+    } else {
+      els.newPriceWarning.classList.add("hidden");
+    }
   }
 
   // ---------- Language picker + header modal ----------
@@ -209,6 +224,7 @@ export function initP2PTab() {
       if (parsed.rows.length === 0) throw new Error("No data rows found in the P2P file.");
       state.p2pParsed = parsed;
 
+      updateNewPriceWarning();
       showSupplierBanner(parsed.supplier, parsed.division);
 
       // When multiple sheets exist, let the user know which one we picked so
@@ -231,6 +247,7 @@ export function initP2PTab() {
       state.p2pParsed = null;
       els.fileInfo.classList.add("hidden");
       els.supplierBanner.classList.add("hidden");
+      updateNewPriceWarning();
       setStatus("error", `<h3>Could not read the P2P file</h3>${escapeHtml(err.message || String(err))}`);
       setGenerateReady("empty");
     }
@@ -556,6 +573,7 @@ export function initP2PTab() {
     if (els.fileInput.files && els.fileInput.files[0]) {
       await handleP2PFile(els.fileInput.files[0]);
     } else {
+      updateNewPriceWarning();
       await tryMerge();
     }
   });
