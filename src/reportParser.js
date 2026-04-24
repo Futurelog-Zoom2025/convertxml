@@ -6,6 +6,11 @@
 // doesn't matter. Header matching is tolerant: case-insensitive, whitespace-
 // collapsed, and <br>/<BR> tags stripped.
 //
+// Supported header languages: English, German (limited), Thai. Each field
+// carries all accepted spellings in its `aliases` list — the first one that
+// matches wins. To support a new language, add its translations as extra
+// aliases; no other changes needed.
+//
 // VBA reference (Get_Data_From_File1145):
 //   Data starts at row 5, stops at the first blank "Type" row.
 //   Price logic:
@@ -26,35 +31,116 @@ export const NA_MARKER = "__NA__";
 // - `aliases`: all accepted spellings (matched case-insensitively, whitespace-collapsed,
 //    with <br> tags stripped). First match wins.
 // - `mandatory`: if true, the file is rejected when no matching header is found.
+//
+// Thai translations were sourced from a real Thai-language Report 1145 file
+// (1624282723796736_TH_.xls). Thai has no case, so lowercasing is a no-op, but
+// the normalizer still collapses whitespace and strips <BR> tags — which
+// matters because the Thai "Article lead time" header has an embedded <BR>.
 const HEADER_MAP = {
-  // ID and Type columns were previously read but never used. Removed for clarity.
-  // The parser uses an empty Article no. as the end-of-data signal.
-  descDE:           { display: "Item name (German)",          aliases: ["item name (german)", "item name german"],     mandatory: false },
-  descFR:           { display: "Item name (French)",          aliases: ["item name (french)", "item name french"],     mandatory: false },
-  descIT:           { display: "Item name (Italian)",         aliases: ["item name (italian)", "item name italian"],   mandatory: false },
-  descGB:           { display: "Item name (English)",         aliases: ["item name (english)", "item name english"],   mandatory: false },
-  descExtra:        { display: "Item name",                   aliases: ["item name"],                                  mandatory: false },
-  itemNo:           { display: "Article no.",                 aliases: ["article no.", "article no", "article number", "artikel nr.", "artikel nr"], mandatory: true  },
-  ean:              { display: "GTIN",                        aliases: ["gtin", "ean"],                                mandatory: false },
-  manArtId:         { display: "Manufacturer's item number",  aliases: ["manufacturer's item number", "manufacturers item number", "manufacturer item number"], mandatory: false },
-  producer:         { display: "Producer",                    aliases: ["producer", "manufacturer"],                   mandatory: false },
-  ou:               { display: "Order unit (OU)",             aliases: ["order unit (ou)", "order unit"],              mandatory: true  },
-  cu:               { display: "Content unit (CU)",           aliases: ["content unit (cu)", "content unit"],          mandatory: true  },
-  cuou:             { display: "Packaging unit",              aliases: ["packaging unit"],                             mandatory: false },
-  priceUnit:        { display: "Price per order unit",        aliases: ["price per order unit", "price"],              mandatory: false },
-  scaledPrice:      { display: "Scaled price",                aliases: ["scaled price"],                               mandatory: false },
-  origin:           { display: "Country of origin",           aliases: ["country of origin", "origin"],                mandatory: false },
-  customsNo:        { display: "Customs tariff number",       aliases: ["customs tariff number", "customs no.", "customs no", "customs number"], mandatory: false },
-  leadTime:         { display: "Article lead time",           aliases: ["article lead time", "lead time", "articlelead time", "article<br>lead time"], mandatory: true  },
-  specUrl:          { display: "Item link supplier",          aliases: ["item link supplier", "spec url", "supplier link"], mandatory: false },
-  offerStart:       { display: "Start of special offer",      aliases: ["start of special offer", "offer start"],      mandatory: false },
-  offerEnd:         { display: "End of special offer",        aliases: ["end of special offer", "offer end"],          mandatory: false },
-  customerId:       { display: "Customer ID",                 aliases: ["customer id", "customerid", "custid", "customer no.", "customer no", "customer number"], mandatory: false },
+  descDE:           { display: "Item name (German)",          aliases: [
+    "item name (german)", "item name german",
+    "ชื่อสินค้า (ภาษาเยอรมัน)",
+  ], mandatory: false },
+  descFR:           { display: "Item name (French)",          aliases: [
+    "item name (french)", "item name french",
+    "ชื่อสินค้า (ภาษาฝรั่งเศส)",
+  ], mandatory: false },
+  descIT:           { display: "Item name (Italian)",         aliases: [
+    "item name (italian)", "item name italian",
+    "ชื่อสินค้า (ภาษาอิตาลี)",
+  ], mandatory: false },
+  descGB:           { display: "Item name (English)",         aliases: [
+    "item name (english)", "item name english",
+    "ชื่อสินค้า (ภาษาอังกฤษ)",
+  ], mandatory: false },
+  // descExtra is the "local language" column — literally labelled "Item name" in
+  // English files, and bare "ชื่อสินค้า" in Thai files (no language suffix).
+  // This alias COULD collide with the language-suffixed variants, but because
+  // header matching is exact-after-normalize (not prefix-matching), the longer
+  // suffixed headers go to their respective fields and only the bare "ชื่อสินค้า"
+  // column lands here.
+  descExtra:        { display: "Item name",                   aliases: [
+    "item name",
+    "ชื่อสินค้า",
+  ], mandatory: false },
+  itemNo:           { display: "Article no.",                 aliases: [
+    "article no.", "article no", "article number",
+    "artikel nr.", "artikel nr",
+    "รหัสสินค้า",
+  ], mandatory: true  },
+  ean:              { display: "GTIN",                        aliases: [
+    "gtin", "ean",
+    // Thai file uses the English "GTIN" literally — no translation needed.
+  ], mandatory: false },
+  manArtId:         { display: "Manufacturer's item number",  aliases: [
+    "manufacturer's item number", "manufacturers item number", "manufacturer item number",
+    "หมายเลขสินค้าของผู้ผลิต",
+  ], mandatory: false },
+  producer:         { display: "Producer",                    aliases: [
+    "producer", "manufacturer",
+    "ผู้ผลิต",
+  ], mandatory: false },
+  ou:               { display: "Order unit (OU)",             aliases: [
+    "order unit (ou)", "order unit",
+    "หน่วยการสั่งซื้อ (ou)",
+  ], mandatory: true  },
+  cu:               { display: "Content unit (CU)",           aliases: [
+    "content unit (cu)", "content unit",
+    "หน่วยบรรจุภัณฑ์ (cu)",
+  ], mandatory: true  },
+  // cuou (Packaging unit) shares the base word "หน่วยบรรจุภัณฑ์" with cu (Content
+  // unit) in Thai — cu is disambiguated by the "(CU)" suffix, cuou is the bare
+  // form. Both are distinct normalized strings so matching works cleanly.
+  cuou:             { display: "Packaging unit",              aliases: [
+    "packaging unit",
+    "หน่วยบรรจุภัณฑ์",
+  ], mandatory: false },
+  priceUnit:        { display: "Price per order unit",        aliases: [
+    "price per order unit", "price",
+    "ราคาต่อหน่วยการสั่งซื้อ",
+  ], mandatory: false },
+  scaledPrice:      { display: "Scaled price",                aliases: [
+    "scaled price",
+    "สเกลราคา",
+  ], mandatory: false },
+  origin:           { display: "Country of origin",           aliases: [
+    "country of origin", "origin",
+    "ประเทศต้นกำเนิด",
+  ], mandatory: false },
+  customsNo:        { display: "Customs tariff number",       aliases: [
+    "customs tariff number", "customs no.", "customs no", "customs number",
+    "พิกัดศุลกากร",
+  ], mandatory: false },
+  leadTime:         { display: "Article lead time",           aliases: [
+    "article lead time", "lead time", "articlelead time", "article<br>lead time",
+    // Thai source: "สินค้า<BR>ระยะเวลาlead time" — after <BR> → space and collapse,
+    // this normalizes to "สินค้า ระยะเวลาlead time".
+    "สินค้า ระยะเวลาlead time",
+  ], mandatory: true  },
+  specUrl:          { display: "Item link supplier",          aliases: [
+    "item link supplier", "spec url", "supplier link",
+    "ลิงค์สินค้าผู้ขาย",
+  ], mandatory: false },
+  offerStart:       { display: "Start of special offer",      aliases: [
+    "start of special offer", "offer start",
+    "วันเริ่มข้อเสนอพิเศษ",
+  ], mandatory: false },
+  offerEnd:         { display: "End of special offer",        aliases: [
+    "end of special offer", "offer end",
+    "ข้อเสนอพิเศษสิ้นสุด",
+  ], mandatory: false },
+  customerId:       { display: "Customer ID",                 aliases: [
+    "customer id", "customerid", "custid",
+    "customer no.", "customer no", "customer number",
+    "รหัสลูกค้า",  // Thai: "customer id" — added proactively; the sample file
+                    // didn't have a Customer ID column to confirm the exact spelling,
+                    // but this matches common FutureLog translations.
+  ], mandatory: false },
 };
 
 // Normalize a header string so minor differences don't break matching.
 //  - strip <br>, <BR>, <br/>, <br /> tags
-//  - lowercase
+//  - lowercase (no-op for Thai, meaningful for EN/DE)
 //  - collapse all whitespace into a single space
 //  - trim
 function normalizeHeader(h) {
