@@ -7,7 +7,7 @@ import * as XLSX from "xlsx";
 import { parseReport1145, NA_MARKER } from "./reportParser.js";
 import { validate } from "./validator.js";
 import { generateXml } from "./xmlGenerator.js";
-import { parseP2PFile } from "./p2pParser.js";
+import { parseP2PFile, parseFirstParseableSheet } from "./p2pParser.js";
 import { mergeP2PAndReport1145 } from "./p2pMerger.js";
 import { P2P_HEADERS, P2P_FIELD_KEYS, headerDisplayList } from "./p2pHeaders.js";
 import {
@@ -173,10 +173,14 @@ export function initP2PTab() {
         "Detecting supplier and headers.",
         () => {
           const wb = XLSX.read(data, { type: "array", cellDates: true });
-          const ws = wb.Sheets[wb.SheetNames[0]];
-          const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: true });
-          return parseP2PFile(aoa, {
-            lang: state.lang,
+          // Try each sheet in order — some workbooks have empty or unrelated
+          // leftover sheets before the real P2P data. parseFirstParseableSheet
+          // picks the first one that parses cleanly.
+          const sheets = wb.SheetNames.map((name) => ({
+            name,
+            aoa: XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: "", raw: true }),
+          }));
+          return parseFirstParseableSheet(sheets, {
             useNewPriceCol: !!els.newPriceCheckbox.checked,
           });
         }
@@ -187,10 +191,16 @@ export function initP2PTab() {
 
       showSupplierBanner(parsed.supplier, parsed.division);
 
+      // When multiple sheets exist, let the user know which one we picked so
+      // they can tell if we guessed wrong and need to reorder their workbook.
+      const sheetNote = parsed.totalSheets > 1
+        ? ` · sheet "${escapeHtml(parsed.sheetName)}" of ${parsed.totalSheets}`
+        : "";
+
       els.fileInfo.innerHTML = `
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;color:var(--success)"><path d="M20 6L9 17l-5-5"/></svg>
         <span class="name">${escapeHtml(file.name)}</span>
-        <span class="size">· ${formatBytes(file.size)} · ${parsed.rows.length} items (counted by Article No.)</span>
+        <span class="size">· ${formatBytes(file.size)} · ${parsed.rows.length} items (counted by Article No.)${sheetNote}</span>
       `;
       els.fileInfo.classList.remove("hidden");
 
@@ -592,6 +602,7 @@ export function initP2PTab() {
       rows: state.mergedRows,
       columns: FULL_COLS,
       invalidCells: state.invalidCells,
+      statusPillMap: STATUS_PILL,
     });
   });
 
