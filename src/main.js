@@ -18,7 +18,6 @@ const els = {
   fileInput: $("#fileInput"),
   fileInfo: $("#fileInfo"),
   paramsCard: $("#paramsCard"),
-  actionCard: $("#actionCard"),
   // Multi-select
   companyMultiselect: $("#companyMultiselect"),
   companyBtn: $("#companyBtn"),
@@ -32,10 +31,10 @@ const els = {
   language: $("#language"),
   validityDate: $("#validityDate"),
   // Actions
-  validateBtn: $("#validateBtn"),
   generateBtn: $("#generateBtn"),
   resetBtn: $("#resetBtn"),
   templateBtn: $("#templateBtn"),
+  genHint: $("#genHint"),
   status: $("#status"),
   // Preview
   previewCard: $("#previewCard"),
@@ -118,12 +117,24 @@ function formatBytes(n) {
   return `${(n / 1024 / 1024).toFixed(2)} MB`;
 }
 
-function enableStep(n) {
-  if (n >= 2) els.paramsCard.setAttribute("aria-disabled", "false");
-  if (n >= 3) {
-    els.actionCard.setAttribute("aria-disabled", "false");
-    els.validateBtn.disabled = false;
+// Drive the Generate button state and hint message from one place.
+// kind: "empty" | "error" | "ready"
+function setGenerateReady(kind, detail) {
+  if (kind === "empty") {
+    els.generateBtn.disabled = true;
+    els.genHint.textContent = "Upload a file first.";
+    els.genHint.className = "gen-hint";
+  } else if (kind === "error") {
+    els.generateBtn.disabled = true;
+    const n = typeof detail === "number" ? detail : 0;
+    els.genHint.textContent = n > 0
+      ? `⚠ Fix the ${n} validation issue${n === 1 ? "" : "s"} above before generating.`
+      : "⚠ Fix the validation issues above before generating.";
+    els.genHint.className = "gen-hint warn";
+  } else if (kind === "ready") {
     els.generateBtn.disabled = false;
+    els.genHint.textContent = detail || "Ready — select one or more Company IDs and click Generate.";
+    els.genHint.className = "gen-hint ready";
   }
 }
 
@@ -131,17 +142,15 @@ function resetAll() {
   state.rows = [];
   state.fileName = null;
   state.selectedCompanies.clear();
+  fullDataInvalidCells = new Map();
   els.fileInput.value = "";
   els.fileInfo.classList.add("hidden");
   els.fileInfo.innerHTML = "";
-  els.paramsCard.setAttribute("aria-disabled", "true");
-  els.actionCard.setAttribute("aria-disabled", "true");
-  els.validateBtn.disabled = true;
-  els.generateBtn.disabled = true;
   els.previewCard.classList.add("hidden");
-  // Uncheck all company checkboxes
   els.companyOptions.querySelectorAll('input[type="checkbox"]').forEach(cb => { cb.checked = false; });
   updateCompanyLabel();
+  refreshErrorFilterControl();
+  setGenerateReady("empty");
   clearStatus();
 }
 
@@ -241,16 +250,19 @@ async function handleFile(file) {
     els.fileInfo.classList.remove("hidden");
 
     renderPreview(rows);
-    enableStep(3);
 
     if (!els.validityDate.value) els.validityDate.value = todayDDMMYYYY();
 
-    setStatus("info", `<strong>File parsed.</strong> ${rows.length} article${rows.length === 1 ? "" : "s"} loaded. Select one or more Company IDs, then click <em>Generate &amp; Download XML</em>.`);
+    // Auto-validate immediately so the user sees errors without clicking anything.
+    // Row-level checks don't depend on the XML params — we use placeholder params
+    // so the parameter-shape checks don't complain about empty fields here.
+    await runValidation(true);
   } catch (err) {
     console.error(err);
     state.rows = [];
     els.fileInfo.classList.add("hidden");
     els.previewCard.classList.add("hidden");
+    setGenerateReady("empty");
     setStatus("error", `<h3>Could not read the file</h3>${escapeHtml(err.message || String(err))}`);
   }
 }
@@ -488,13 +500,14 @@ function closeFullDataModal() {
 
 // --------------- Validate / Generate ---------------
 
-async function runValidation(silent = false) {
-  // Company ID only affects the output filename, not the row-level checks.
-  // Use the first selected company if any, otherwise a placeholder so the
-  // param-shape check still passes when the user runs "Validate Only" early.
-  const selected = getSelectedCompanies();
-  const companyForValidation = selected[0] || "000";
-  const params = getParams(companyForValidation);
+// runValidation is called automatically on file parse (auto=true) and again
+// as part of Generate (auto=false). When auto=true, we skip param-shape checks
+// by passing valid placeholder params — the user hasn't filled anything in yet,
+// so flagging "Supplier Number must be 6 digits" would be noise.
+async function runValidation(auto = false) {
+  const params = auto
+    ? { companyId: "000", supplierNo: "000000", language: "TH", validityDate: "01012026" }
+    : getParams(getSelectedCompanies()[0] || "000");
 
   const result = await runWithLoading(
     "Validating…",
@@ -515,15 +528,17 @@ async function runValidation(silent = false) {
       ? `<p style="margin-top:10px"><strong>Warnings:</strong></p><ul>${warnings.map((w) => `<li>${escapeHtml(w)}</li>`).join("")}</ul>`
       : "";
     setStatus("error", `<h3>Validation failed — ${errors.length} issue${errors.length === 1 ? "" : "s"}</h3><ul>${list}</ul>${warnList}`);
+    setGenerateReady("error", errors.length);
     return false;
   }
 
   if (warnings.length) {
     const list = warnings.map((w) => `<li>${escapeHtml(w)}</li>`).join("");
     setStatus("warn", `<h3>Validation passed with warnings</h3><ul>${list}</ul>`);
-  } else if (!silent) {
+  } else {
     setStatus("success", `<h3>Validation passed</h3>All ${state.rows.length} rows look good.`);
   }
+  setGenerateReady("ready");
   return true;
 }
 
@@ -553,7 +568,9 @@ async function runGenerate() {
     return;
   }
 
-  const ok = await runValidation(true);
+  // Re-validate with the real parameter values so shape-checks (supplier no,
+  // validity date, etc.) are applied on the final generation path.
+  const ok = await runValidation(false);
   if (!ok) return;
 
   const createdFiles = [];
@@ -573,7 +590,6 @@ async function runGenerate() {
       downloadBlob("\uFEFF" + xml, filename, "application/xml;charset=utf-8");
       createdFiles.push(filename);
 
-      // Tiny gap so browsers don't dedupe or block consecutive downloads
       if (i < companies.length - 1) await delay(350);
     }
 
@@ -634,7 +650,6 @@ els.clearAllCompanies.addEventListener("click", () => {
 });
 
 // Action buttons
-els.validateBtn.addEventListener("click", () => runValidation(false));
 els.generateBtn.addEventListener("click", runGenerate);
 els.resetBtn.addEventListener("click", resetAll);
 els.templateBtn.addEventListener("click", (e) => {
@@ -702,6 +717,6 @@ els.fullDataSearch.addEventListener("input", (e) => {
 // Prefill helpful defaults
 els.validityDate.placeholder = todayDDMMYYYY();
 
-// Unlock parameters panel immediately so users can fill them early
-enableStep(2);
+// Initial state — no file, generate is disabled until a file validates cleanly
+setGenerateReady("empty");
 updateCompanyLabel();
