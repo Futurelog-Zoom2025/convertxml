@@ -57,7 +57,10 @@ export function generateXml(rows, params) {
   for (const r of rows) {
     parts.push("<ARTICLE>");
 
-    parts.push("<n>");
+    // The language-name block. Original VBA uses <NAME>...</NAME> — an earlier
+    // version of this file had a typo (<n>...</n>) which was visible in the
+    // downloaded XML compared to VBA output. Keep this exactly as NAME.
+    parts.push("<NAME>");
     parts.push(`<DE>${xmlEscape(r.descDE)}</DE>`);
     parts.push(`<FR>${xmlEscape(r.descFR)}</FR>`);
     parts.push(`<IT>${xmlEscape(r.descIT)}</IT>`);
@@ -65,7 +68,7 @@ export function generateXml(rows, params) {
     if (!isPrimaryLang) {
       parts.push(`<XX>${xmlEscape(r.descExtra)}</XX>`);
     }
-    parts.push("</n>");
+    parts.push("</NAME>");
 
     parts.push("<ARTICLEDATA>");
     parts.push(`<ARTNO>${xmlEscape(r.itemNo)}</ARTNO>`);
