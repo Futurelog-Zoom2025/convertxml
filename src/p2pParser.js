@@ -57,20 +57,69 @@ function toNumericOrEmpty(v) {
 }
 
 /**
- * Try each prefix against the given cell. For "Supplier: 997286 - Zam Zam..."
- * or "Nhà cung cấp: 143277 - Song Hanh..." returns { num, name } on match,
- * or null if no prefix matched.
+ * Try each prefix against the given cell. Handles messy hotel data — the
+ * regex is deliberately loose because suppliers ship all sorts of variants:
+ *
+ *   "Supplier: 997286 - Zam Zam Trading"            (strict, standard)
+ *   "Nhà cung cấp: 143277 - Cong Ty Song Hanh"      (VN, standard)
+ *   "Supplier 143277 - Song Hanh"                   (no colon)
+ *   "Supplier: 143277 Song Hanh"                    (no dash)
+ *   "Supplier: Song Hanh"                           (no number)
+ *   "Supplier 997286"                               (no name)
+ *   "Supplier:"                                     (prefix only, empty)
+ *
+ * Returns { num, name } when any of the known prefixes matches, or null when
+ * the cell doesn't start with a known prefix. Never throws — a missing or
+ * malformed label row just means the banner won't display, and parsing continues.
  */
 function parseLabelRow(cellValue, prefixes) {
   if (!cellValue) return null;
-  const s = String(cellValue).normalize("NFC").trim();
+  const raw = String(cellValue).normalize("NFC").trim();
+  if (!raw) return null;
+
   for (const prefix of prefixes) {
-    const re = new RegExp(
-      `^\\s*${escapeRegex(prefix)}\\s*:\\s*([^\\s-][^-]*?)\\s*-\\s*(.+?)\\s*$`,
-      "i"
-    );
-    const m = s.match(re);
-    if (m) return { num: m[1].trim(), name: m[2].trim() };
+    // Match the prefix followed by either ":" or a digit. This accepts the
+    // standard "Supplier: 123 - Name" AND messier "Supplier 143277 - Name"
+    // (missing colon), while rejecting plain titles like "Supplier Items List
+    // Report" that just happen to start with the same word.
+    const prefixRe = new RegExp(`^\\s*${escapeRegex(prefix)}\\s*(?::\\s*|(?=\\d))(.*)$`, "i");
+    const m = raw.match(prefixRe);
+    if (!m) continue;
+
+    const rest = m[1].trim();
+    if (!rest) return { num: "", name: "" };  // prefix + colon alone, nothing after
+
+    // Prefer {num}{sep}{name} where sep is dash/colon/comma.
+    let split = rest.match(/^(\S+?)\s*[-:,]\s*(.+)$/);
+    if (split) return { num: split[1].trim(), name: split[2].trim() };
+
+    // Fallback: "{digits} {text}" with only whitespace as separator.
+    split = rest.match(/^(\d+)\s+(.+)$/);
+    if (split) return { num: split[1].trim(), name: split[2].trim() };
+
+    // No split available: all digits → num-only; otherwise name-only.
+    if (/^\d+$/.test(rest)) return { num: rest, name: "" };
+    return { num: "", name: rest };
+  }
+  return null;
+}
+
+/**
+ * Scan the first few rows (typically rows 1-4) for a cell matching any of the
+ * given label prefixes. Hotels occasionally shift rows around or add blank
+ * lines, so we don't pin to a fixed row index.
+ *
+ * Only column A is scanned by default (that's where suppliers always put these
+ * labels in practice). Falls back silently to null when nothing matches — the
+ * caller just doesn't get a banner.
+ */
+function findLabelInRows(aoa, prefixes, maxRowsToScan = 4) {
+  const limit = Math.min(maxRowsToScan, aoa.length);
+  for (let i = 0; i < limit; i++) {
+    const row = aoa[i];
+    if (!row) continue;
+    const hit = parseLabelRow(row[0], prefixes);
+    if (hit) return hit;
   }
   return null;
 }
@@ -137,8 +186,12 @@ export function parseP2PFile(aoa, opts) {
     throw new Error("Sheet looks empty or has fewer than 5 rows (expected headers on row 5).");
   }
 
-  const division = parseLabelRow(aoa[1]?.[0], DIVISION_LABEL_PREFIXES);
-  const supplier = parseLabelRow(aoa[2]?.[0], SUPPLIER_LABEL_PREFIXES);
+  // Supplier and division lines are OPTIONAL. Scan the first 4 rows (not
+  // fixed positions) to handle hotel files that shift things around or have
+  // blank leading rows. If nothing matches, both stay null and the banner
+  // just won't show — parsing continues normally.
+  const division = findLabelInRows(aoa, DIVISION_LABEL_PREFIXES, 4);
+  const supplier = findLabelInRows(aoa, SUPPLIER_LABEL_PREFIXES, 4);
 
   const headerRow = aoa[HEADER_ROW_INDEX] || [];
   const { resolved, missing } = resolveHeaders(headerRow, useNewPriceCol);
