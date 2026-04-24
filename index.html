@@ -10,98 +10,258 @@
     <div class="page">
       <header class="hero">
         <h1>Report 1145 → XML Converter</h1>
-        <p class="sub">Upload Report 1145 (Excel) and generate a validated FUTURELOG XML file</p>
+        <p class="sub">Upload Excel and generate a validated FUTURELOG XML file</p>
       </header>
 
-      <section class="card">
-        <div class="card-header-row">
-          <h2><span class="step">1</span> Upload your Report 1145 Excel file</h2>
-          <button id="resetBtn" class="btn btn-ghost btn-sm">Reset</button>
-        </div>
-        <div class="drop-zone" id="dropZone">
-          <input type="file" id="fileInput" accept=".xls,.xlsx,.xlsm" hidden />
-          <div class="drop-inner">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="icon-lg"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
-            <p><strong>Click to select</strong> or drag &amp; drop a <code>.xls</code> / <code>.xlsx</code> file</p>
-            <p class="muted small">The file will be processed entirely in your browser — nothing is uploaded to any server.</p>
-          </div>
-        </div>
-        <div id="fileInfo" class="file-info hidden"></div>
-        <p class="muted small template-note">
-          Don't have a file yet?
-          <a href="#" id="templateBtn" class="template-link">Download the blank Report 1145 template</a>
-          to see the expected format.
-        </p>
-        <!-- Validation status shown here automatically after file parse -->
-        <div id="status" class="status hidden"></div>
-      </section>
+      <nav class="tabs" role="tablist">
+        <button class="tab active" id="tabBtn1145" role="tab" aria-selected="true" data-tab="r1145">Convert XML from 1145 report</button>
+        <button class="tab" id="tabBtnP2P" role="tab" aria-selected="false" data-tab="p2p">Convert XML from P2P report</button>
+      </nav>
 
-      <section class="card hidden" id="previewCard">
-        <div class="preview-header">
-          <div>
-            <h2 style="margin-bottom:4px">Data Preview</h2>
-            <p class="muted small" id="previewSummary" style="margin:0"></p>
+      <!-- ─────────── TAB 1: Report 1145 ─────────── -->
+      <div class="tab-panel active" id="panel1145" role="tabpanel">
+        <section class="card">
+          <div class="card-header-row">
+            <h2><span class="step">1</span> Upload your Report 1145 Excel file</h2>
+            <button id="resetBtn" class="btn btn-ghost btn-sm">Reset</button>
           </div>
-          <button type="button" id="showFullBtn" class="btn btn-ghost btn-sm">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px"><path d="M3 8V3h5M21 8V3h-5M3 16v5h5M21 16v5h-5"/></svg>
-            Show Full Data
-          </button>
-        </div>
-        <div class="preview-table-wrap">
-          <table id="previewTable" class="preview-table"></table>
-        </div>
-      </section>
-
-      <section class="card" id="paramsCard">
-        <h2><span class="step">2</span> XML Parameters &amp; Generate</h2>
-        <div class="grid">
-          <label>
-            <span>WebShop Company ID <em>(select one or more)</em></span>
-            <div class="multiselect" id="companyMultiselect">
-              <button type="button" class="multiselect-btn" id="companyBtn">
-                <span id="companyBtnLabel" class="muted">Select companies…</span>
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="caret-icon"><path d="M6 9l6 6 6-6"/></svg>
-              </button>
-              <div class="multiselect-menu hidden" id="companyMenu">
-                <div class="multiselect-menu-actions">
-                  <button type="button" class="link-btn" id="selectAllCompanies">Select all</button>
-                  <button type="button" class="link-btn" id="clearAllCompanies">Clear</button>
-                </div>
-                <div class="multiselect-options" id="companyOptions"></div>
-              </div>
+          <div class="drop-zone" id="dropZone">
+            <input type="file" id="fileInput" accept=".xls,.xlsx,.xlsm" hidden />
+            <div class="drop-inner">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="icon-lg"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+              <p><strong>Click to select</strong> or drag &amp; drop a <code>.xls</code> / <code>.xlsx</code> file</p>
+              <p class="muted small">The file is processed entirely in your browser — nothing is uploaded to any server.</p>
             </div>
-          </label>
-          <label>
-            <span>Supplier Number <em>(6 digits)</em></span>
-            <input type="text" id="supplierNo" maxlength="6" placeholder="e.g. 123456" inputmode="numeric" pattern="[0-9]{6}" />
-          </label>
-          <label>
-            <span>Language</span>
-            <select id="language">
-              <option value="AU">AU</option>
-              <option value="DE">DE</option>
-              <option value="FR">FR</option>
-              <option value="IT">IT</option>
-              <option value="GB">GB</option>
-              <option value="TR">TR</option>
-              <option value="VN">VN</option>
-              <option value="TH" selected>TH</option>
-              <option value="JP">JP</option>
-              <option value="CN">CN</option>
-              <option value="HK">HK</option>
-              <option value="NL">NL</option>
-            </select>
-          </label>
-          <label>
-            <span>Validity Date <em>(DDMMYYYY)</em></span>
-            <input type="text" id="validityDate" maxlength="8" placeholder="31122026" inputmode="numeric" pattern="[0-9]{8}" />
-          </label>
-        </div>
-        <div class="generate-row">
-          <button id="generateBtn" class="btn btn-primary" disabled>Generate &amp; Download XML</button>
-          <p id="genHint" class="gen-hint">Upload a file first.</p>
-        </div>
-      </section>
+          </div>
+          <div id="fileInfo" class="file-info hidden"></div>
+          <p class="muted small template-note">
+            Don't have a file yet?
+            <a href="#" id="templateBtn" class="template-link">Download the blank Report 1145 template</a>
+            to see the expected format.
+          </p>
+          <div id="status" class="status hidden"></div>
+        </section>
+
+        <section class="card hidden" id="previewCard">
+          <div class="preview-header">
+            <div>
+              <h2 style="margin-bottom:4px">Data Preview</h2>
+              <p class="muted small" id="previewSummary" style="margin:0"></p>
+            </div>
+            <button type="button" id="showFullBtn" class="btn btn-ghost btn-sm">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px"><path d="M3 8V3h5M21 8V3h-5M3 16v5h5M21 16v5h-5"/></svg>
+              Show Full Data
+            </button>
+          </div>
+          <div class="preview-table-wrap">
+            <table id="previewTable" class="preview-table"></table>
+          </div>
+        </section>
+
+        <section class="card" id="paramsCard">
+          <h2><span class="step">2</span> XML Parameters &amp; Generate</h2>
+          <div class="grid">
+            <label>
+              <span>WebShop Company ID <em>(select one or more)</em></span>
+              <div class="multiselect" id="companyMultiselect">
+                <button type="button" class="multiselect-btn" id="companyBtn">
+                  <span id="companyBtnLabel" class="muted">Select companies…</span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="caret-icon"><path d="M6 9l6 6 6-6"/></svg>
+                </button>
+                <div class="multiselect-menu hidden" id="companyMenu">
+                  <div class="multiselect-menu-actions">
+                    <button type="button" class="link-btn" id="selectAllCompanies">Select all</button>
+                    <button type="button" class="link-btn" id="clearAllCompanies">Clear</button>
+                  </div>
+                  <div class="multiselect-options" id="companyOptions"></div>
+                </div>
+              </div>
+            </label>
+            <label>
+              <span>Supplier Number <em>(6 digits)</em></span>
+              <input type="text" id="supplierNo" maxlength="6" placeholder="e.g. 123456" inputmode="numeric" pattern="[0-9]{6}" />
+            </label>
+            <label>
+              <span>Language</span>
+              <select id="language">
+                <option value="AU">AU</option><option value="DE">DE</option><option value="FR">FR</option>
+                <option value="IT">IT</option><option value="GB">GB</option><option value="TR">TR</option>
+                <option value="VN">VN</option><option value="TH" selected>TH</option><option value="JP">JP</option>
+                <option value="CN">CN</option><option value="HK">HK</option><option value="NL">NL</option>
+              </select>
+            </label>
+            <label>
+              <span>Validity Date <em>(DDMMYYYY)</em></span>
+              <input type="text" id="validityDate" maxlength="8" placeholder="31122026" inputmode="numeric" pattern="[0-9]{8}" />
+            </label>
+          </div>
+          <div class="generate-row">
+            <button id="generateBtn" class="btn btn-primary" disabled>Generate &amp; Download XML</button>
+            <p id="genHint" class="gen-hint">Upload a file first.</p>
+          </div>
+        </section>
+      </div>
+
+      <!-- ─────────── TAB 2: P2P ─────────── -->
+      <div class="tab-panel" id="panelP2P" role="tabpanel">
+        <section class="card">
+          <div class="card-header-row">
+            <h2><span class="step">1</span> Upload the P2P file from the hotel</h2>
+            <button id="p2pResetBtn" class="btn btn-ghost btn-sm">Reset</button>
+          </div>
+
+          <div id="p2pSupplierBanner" class="supplier-banner hidden">
+            <div class="icon" id="p2pSupplierIcon">—</div>
+            <div class="info">
+              <div class="label">Supplier detected</div>
+              <div class="name" id="p2pSupplierName">—</div>
+              <div class="meta" id="p2pSupplierMeta">—</div>
+            </div>
+          </div>
+
+          <div class="grid" style="margin-bottom:14px;">
+            <label>
+              <span>Header language in the P2P file</span>
+              <div class="lang-pick" id="p2pLangPick">
+                <button type="button" class="lang-btn active" data-lang="EN">EN (English)</button>
+                <button type="button" class="lang-btn" data-lang="VN">VN (Vietnamese)</button>
+              </div>
+            </label>
+            <label>
+              <span>&nbsp;</span>
+              <button type="button" id="p2pShowHeadersBtn" class="btn btn-ghost btn-sm" style="justify-self:start;">
+                📋  Show expected headers
+              </button>
+            </label>
+          </div>
+
+          <div class="drop-zone" id="p2pDropZone">
+            <input type="file" id="p2pFileInput" accept=".xls,.xlsx,.xlsm" hidden />
+            <div class="drop-inner">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="icon-lg"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+              <p><strong>Click to select</strong> or drag &amp; drop the P2P <code>.xls</code> / <code>.xlsx</code> file</p>
+              <p class="muted small">Processed entirely in your browser — nothing is uploaded.</p>
+            </div>
+          </div>
+          <div id="p2pFileInfo" class="file-info hidden"></div>
+
+          <div id="p2pHdrModal" class="hdr-modal hidden">
+            <div class="hdr-modal-head">
+              <h3>Expected P2P headers (row 5)</h3>
+              <button type="button" id="p2pHdrClose" class="hdr-close" aria-label="Close">✕</button>
+            </div>
+            <p class="muted small" style="margin: 0 0 8px">
+              ⚠ Case-sensitive. Only the highlighted columns are required — the rest are optional.
+            </p>
+            <pre class="hdr-box" id="p2pHdrBox"></pre>
+            <button type="button" id="p2pHdrCopyBtn" class="btn btn-ghost btn-sm">Copy to clipboard</button>
+            <p class="muted small" style="margin: 10px 0 0; padding-top:8px; border-top: 1px dashed var(--border);">
+              <strong>Required columns:</strong> Article No., and either Price / Order unit or NEW PRICE (based on the toggle below).<br>
+              <strong>Row count key:</strong> Rows are counted by the Article No. column — blank Article No. = end of data.
+            </p>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2><span class="step">2</span> Upload the matching Report 1145 file</h2>
+          <div class="drop-zone" id="p2pR1145DropZone">
+            <input type="file" id="p2pR1145FileInput" accept=".xls,.xlsx,.xlsm" hidden />
+            <div class="drop-inner">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="icon-lg"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+              <p><strong>Click to select</strong> or drag &amp; drop the Report 1145 file</p>
+              <p class="muted small">Used to fill in descriptions, units, origin, etc. that the P2P file doesn't include.</p>
+            </div>
+          </div>
+          <div id="p2pR1145FileInfo" class="file-info hidden"></div>
+        </section>
+
+        <section class="card">
+          <h2><span class="step">3</span> Lookup options</h2>
+          <div class="toggle-row">
+            <label class="tgl" id="p2pTglNewPrice">
+              <input type="checkbox" id="p2pNewPriceCheckbox" checked />
+              <span class="tgl-sw"></span>
+              <span class="tgl-label">
+                The P2P file has a separate "NEW PRICE" column
+                <small>When ON, pull the new price from new price column. When OFF, the price will come from Price / Order unit column.</small>
+              </span>
+            </label>
+            <label class="tgl" id="p2pTglOpenLead">
+              <input type="checkbox" id="p2pOpenLeadCheckbox" />
+              <span class="tgl-sw"></span>
+              <span class="tgl-label">
+                Open lead time when a new price exists
+                <small>When ON, any row with a new price &gt; 1 has its lead time set to 1 and is flagged "Open lead time".</small>
+              </span>
+            </label>
+          </div>
+          <div id="p2pMergeStatus" class="status hidden"></div>
+        </section>
+
+        <section class="card hidden" id="p2pPreviewCard">
+          <div class="preview-header">
+            <div>
+              <h2 style="margin-bottom:4px">Data Preview</h2>
+              <p class="muted small" id="p2pPreviewSummary" style="margin:0"></p>
+            </div>
+            <button type="button" id="p2pShowFullBtn" class="btn btn-ghost btn-sm">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px"><path d="M3 8V3h5M21 8V3h-5M3 16v5h5M21 16v5h-5"/></svg>
+              Show Full Data
+            </button>
+          </div>
+          <div class="preview-table-wrap">
+            <table id="p2pPreviewTable" class="preview-table"></table>
+          </div>
+          <div class="p2p-legend">
+            <span><span class="sw sw-updated"></span> Price updated from P2P</span>
+            <span><span class="sw sw-fallback"></span> Fallback to Report 1145 price</span>
+            <span><span class="sw sw-nopu"></span> No price update</span>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2><span class="step">4</span> XML Parameters &amp; Generate</h2>
+          <div class="grid">
+            <label>
+              <span>WebShop Company ID <em>(select one or more)</em></span>
+              <div class="multiselect" id="p2pCompanyMultiselect">
+                <button type="button" class="multiselect-btn" id="p2pCompanyBtn">
+                  <span id="p2pCompanyBtnLabel" class="muted">Select companies…</span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="caret-icon"><path d="M6 9l6 6 6-6"/></svg>
+                </button>
+                <div class="multiselect-menu hidden" id="p2pCompanyMenu">
+                  <div class="multiselect-menu-actions">
+                    <button type="button" class="link-btn" id="p2pSelectAllCompanies">Select all</button>
+                    <button type="button" class="link-btn" id="p2pClearAllCompanies">Clear</button>
+                  </div>
+                  <div class="multiselect-options" id="p2pCompanyOptions"></div>
+                </div>
+              </div>
+            </label>
+            <label>
+              <span>Supplier Number <em>(6 digits — auto-filled from P2P when possible)</em></span>
+              <input type="text" id="p2pSupplierNo" maxlength="6" placeholder="e.g. 123456" inputmode="numeric" pattern="[0-9]{6}" />
+            </label>
+            <label>
+              <span>Language</span>
+              <select id="p2pLanguage">
+                <option value="AU">AU</option><option value="DE">DE</option><option value="FR">FR</option>
+                <option value="IT">IT</option><option value="GB">GB</option><option value="TR">TR</option>
+                <option value="VN">VN</option><option value="TH" selected>TH</option><option value="JP">JP</option>
+                <option value="CN">CN</option><option value="HK">HK</option><option value="NL">NL</option>
+              </select>
+            </label>
+            <label>
+              <span>Validity Date <em>(DDMMYYYY)</em></span>
+              <input type="text" id="p2pValidityDate" maxlength="8" placeholder="31122026" inputmode="numeric" pattern="[0-9]{8}" />
+            </label>
+          </div>
+          <div class="generate-row">
+            <button id="p2pGenerateBtn" class="btn btn-primary" disabled>Generate &amp; Download XML</button>
+            <p id="p2pGenHint" class="gen-hint">Upload both files first.</p>
+          </div>
+        </section>
+      </div>
 
       <footer>
         <p class="muted small">
@@ -111,7 +271,7 @@
       </footer>
     </div>
 
-    <!-- Full-data modal -->
+    <!-- Full-data modal (shared across tabs) -->
     <div id="fullDataModal" class="full-modal hidden" role="dialog" aria-modal="true" aria-labelledby="fullDataTitle">
       <div class="full-modal-inner">
         <div class="full-modal-header">
