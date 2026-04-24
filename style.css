@@ -393,11 +393,44 @@ input.invalid { border-color: var(--error); }
 .preview-table th.c-local, .preview-table td.c-local { width: auto; }
 .preview-table th.c-ean, .preview-table td.c-ean { width: 92px; font-family: 'SF Mono', Monaco, Consolas, monospace; font-size: 10.5px; }
 .preview-table th.c-unit, .preview-table td.c-unit { width: 38px; text-align: center; }
-.preview-table th.c-cuou, .preview-table td.c-cuou { width: 42px; text-align: right; }
-.preview-table th.c-price, .preview-table td.c-price { width: 62px; text-align: right; font-variant-numeric: tabular-nums; }
+/* c-cuou holds the Diff column on the P2P tab. Widened so large VN numbers
+   like "+100000.00" stay on one line instead of wrapping to two rows. */
+.preview-table th.c-cuou, .preview-table td.c-cuou { width: 72px; text-align: right; font-variant-numeric: tabular-nums; }
+/* c-price widened for large Vietnamese prices (typical items run 5-6 digits
+   before the decimal, e.g. 342000.00 = 9 chars). */
+.preview-table th.c-price, .preview-table td.c-price { width: 80px; text-align: right; font-variant-numeric: tabular-nums; }
 .preview-table th.c-origin, .preview-table td.c-origin { width: 42px; text-align: center; }
 .preview-table th.c-avail, .preview-table td.c-avail { width: 44px; text-align: right; }
 .preview-table th.c-cust, .preview-table td.c-cust { width: 52px; text-align: center; font-family: 'SF Mono', Monaco, Consolas, monospace; font-size: 11px; }
+
+/* Small inline pill showing which header languages each upload accepts.
+   Sits inside the drop-zone so users can see at a glance whether their file
+   language is supported before attempting an upload. */
+.lang-note {
+  margin-top: 8px !important;
+  display: inline-block;
+  padding: 2px 8px;
+  background: #f0f0ee;
+  border-radius: 10px;
+  font-size: 11px;
+  letter-spacing: 0.03em;
+  color: var(--muted);
+}
+
+/* Override the table's default word-break for numeric / identifier columns so
+   values never wrap to two lines. Description columns (c-de / c-en / c-local)
+   still wrap naturally because product names can be long. Overflowing numbers
+   are clipped with an ellipsis instead — the full value is still in the cell's
+   title tooltip on hover. */
+.preview-table td.c-pos, .preview-table td.c-item, .preview-table td.c-ean,
+.preview-table td.c-unit, .preview-table td.c-cuou, .preview-table td.c-price,
+.preview-table td.c-origin, .preview-table td.c-avail, .preview-table td.c-cust {
+  white-space: nowrap;
+  word-break: keep-all;
+  overflow-wrap: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 td.invalid-cell { background: #fdecea; color: var(--error); }
 td.invalid-cell.na-cell::after { content: " #N/A"; font-size: 0.85em; opacity: 0.6; }
