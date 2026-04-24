@@ -284,6 +284,9 @@
               <input type="checkbox" id="errorFilterCheckbox" />
               <span>Errors only (<span id="errorRowCount">0</span>)</span>
             </label>
+            <select id="fullDataStatusFilter" class="status-filter hidden" title="Filter by status">
+              <option value="__all__">All statuses</option>
+            </select>
             <input type="text" id="fullDataSearch" placeholder="Search any column…" class="search-input" title="Type to show only rows where any cell contains this text" />
             <button type="button" id="closeFullBtn" class="btn btn-ghost btn-sm" aria-label="Close">✕ Close</button>
           </div>
