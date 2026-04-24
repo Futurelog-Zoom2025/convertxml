@@ -2,8 +2,21 @@
 // row format used by the XML generator.
 //
 // Matches the VBA logic from Module8 (Get_Data_From_Report1145_revised) of
-// Importlist_TH_XML (For MDM)__new.xlsm:
+// Importlist_TH_XML (For MDM)__new.xlsm, with one extension to the "Open lead
+// time" toggle agreed with the business:
 //
+//   TOGGLE OFF → everything keeps its Report 1145 lead time (as before).
+//   TOGGLE ON  → the toggle is a SYMMETRIC operator:
+//                  a) rows that received a real new price (> 1) get lead = 1
+//                     (status "Open lead time")
+//                  b) rows that did NOT receive a price update get lead = 0
+//                     (statuses "Price from report 1145" / "No price update")
+//                The idea is that when the buyer chooses to actively manage
+//                lead times based on price activity, non-updated rows should
+//                be closed out rather than silently keeping their old lead
+//                time from Report 1145.
+//
+// Flow:
 //  - Iterate each P2P row (keyed by Article No.)
 //  - Look up the matching Report 1145 row by supplier article no. (R1145 `itemNo`)
 //  - If matched: merge R1145 descriptions/units/origin with the P2P price
@@ -37,7 +50,8 @@ function r1145PriceOf(r) {
 }
 
 // Decide the final price + availability + status for a merged row.
-// Mirrors Module8's price-fallback + Open Lead Time block.
+// Mirrors Module8's price-fallback + Open Lead Time block, plus the new
+// close-to-0 behavior described at the top of this file.
 function computePriceAndStatus({ p2pRow, r1145Row, opts }) {
   const useNewPriceCol = !!opts.useNewPriceCol;
   const openLeadTime   = !!opts.openLeadTime;
@@ -45,16 +59,13 @@ function computePriceAndStatus({ p2pRow, r1145Row, opts }) {
   const p2pPrice = p2pRow ? p2pPriceFor(p2pRow, useNewPriceCol) : 0;
   const r1145Price = r1145Row ? r1145PriceOf(r1145Row) : 0;
   const r1145Lt    = r1145Row ? r1145Row.leadTimeRaw : "";
+  const r1145LtOrZero = r1145Lt !== "" && r1145Lt !== null && r1145Lt !== undefined ? r1145Lt : "0";
 
-  // Fallback rule (VBA: "If Cells(b, 23).Value <= 1 Then ... Price from report 1145"):
-  // when P2P price is missing or <= 0, use R1145 price and flag the row.
   let finalPrice, status, availability;
 
   if (p2pPrice > 0) {
     finalPrice = p2pPrice;
-    availability = r1145Lt !== "" && r1145Lt !== null && r1145Lt !== undefined
-      ? r1145Lt
-      : "0";
+    availability = r1145LtOrZero;
 
     if (openLeadTime && p2pPrice > 1) {
       // Module8: "Open lead time if there is price in new price column"
@@ -65,11 +76,12 @@ function computePriceAndStatus({ p2pRow, r1145Row, opts }) {
       status = "";
     }
   } else {
-    // No usable P2P price → fall back to Report 1145
+    // No usable P2P price → fall back to Report 1145 price.
     finalPrice = r1145Price || 0;
-    availability = r1145Lt !== "" && r1145Lt !== null && r1145Lt !== undefined
-      ? r1145Lt
-      : "0";
+    // SYMMETRIC CLOSE RULE: when the Open Lead Time toggle is ON, rows that
+    // didn't get a price update have their lead time forced to "0". When the
+    // toggle is OFF, keep the R1145 lead time as the previous VBA did.
+    availability = openLeadTime ? "0" : r1145LtOrZero;
     status = "Price from report 1145";
   }
 
@@ -131,10 +143,16 @@ function buildP2POnlyRow({ p2pRow, opts, pos }) {
 }
 
 // Row for an R1145 item that had no matching P2P row — appended at the end.
-function buildR1145OnlyRow({ r1145Row, pos }) {
+// Same symmetric close rule applies: when the Open Lead Time toggle is ON,
+// these "no price update" rows also get their lead time closed to "0".
+function buildR1145OnlyRow({ r1145Row, opts, pos }) {
+  const r1145Lt = r1145Row.leadTimeRaw;
+  const r1145LtOrZero = r1145Lt !== "" && r1145Lt !== null && r1145Lt !== undefined ? r1145Lt : "0";
+  const availability = opts.openLeadTime ? "0" : r1145LtOrZero;
   return {
     ...r1145Row,
     pos,
+    availability,
     __oldPrice: r1145PriceOf(r1145Row),
     __newPrice: "",
     status: "No price update",
@@ -183,7 +201,7 @@ export function mergeP2PAndReport1145(r1145Rows, p2pRows, opts) {
   // 2) Append R1145 items that were not in P2P, with "No price update"
   for (const [key, r] of r1145ByArticle) {
     if (!matchedKeys.has(key)) {
-      merged.push(buildR1145OnlyRow({ r1145Row: r, pos: pos++ }));
+      merged.push(buildR1145OnlyRow({ r1145Row: r, opts: options, pos: pos++ }));
     }
   }
 
