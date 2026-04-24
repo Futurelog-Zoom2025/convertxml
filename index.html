@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Report 1145 → XML Converter</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <div class="page">
+      <header class="hero">
+        <h1>Report 1145 → XML Converter</h1>
+        <p class="sub">Upload Report 1145 (Excel) and generate a validated FUTURELOG XML file</p>
+      </header>
+
+      <section class="card">
+        <div class="card-header-row">
+          <h2><span class="step">1</span> Upload your Report 1145 Excel file</h2>
+          <button id="resetBtn" class="btn btn-ghost btn-sm">Reset</button>
+        </div>
+        <div class="drop-zone" id="dropZone">
+          <input type="file" id="fileInput" accept=".xls,.xlsx,.xlsm" hidden />
+          <div class="drop-inner">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="icon-lg"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+            <p><strong>Click to select</strong> or drag &amp; drop a <code>.xls</code> / <code>.xlsx</code> file</p>
+            <p class="muted small">The file will be processed entirely in your browser — nothing is uploaded to any server.</p>
+          </div>
+        </div>
+        <div id="fileInfo" class="file-info hidden"></div>
+        <p class="muted small template-note">
+          Don't have a file yet?
+          <a href="#" id="templateBtn" class="template-link">Download the blank Report 1145 template</a>
+          to see the expected format.
+        </p>
+        <!-- Validation status shown here automatically after file parse -->
+        <div id="status" class="status hidden"></div>
+      </section>
+
+      <section class="card hidden" id="previewCard">
+        <div class="preview-header">
+          <div>
+            <h2 style="margin-bottom:4px">Data Preview</h2>
+            <p class="muted small" id="previewSummary" style="margin:0"></p>
+          </div>
+          <button type="button" id="showFullBtn" class="btn btn-ghost btn-sm">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px"><path d="M3 8V3h5M21 8V3h-5M3 16v5h5M21 16v5h-5"/></svg>
+            Show Full Data
+          </button>
+        </div>
+        <div class="preview-table-wrap">
+          <table id="previewTable" class="preview-table"></table>
+        </div>
+      </section>
+
+      <section class="card" id="paramsCard">
+        <h2><span class="step">2</span> XML Parameters &amp; Generate</h2>
+        <div class="grid">
+          <label>
+            <span>WebShop Company ID <em>(select one or more)</em></span>
+            <div class="multiselect" id="companyMultiselect">
+              <button type="button" class="multiselect-btn" id="companyBtn">
+                <span id="companyBtnLabel" class="muted">Select companies…</span>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="caret-icon"><path d="M6 9l6 6 6-6"/></svg>
+              </button>
+              <div class="multiselect-menu hidden" id="companyMenu">
+                <div class="multiselect-menu-actions">
+                  <button type="button" class="link-btn" id="selectAllCompanies">Select all</button>
+                  <button type="button" class="link-btn" id="clearAllCompanies">Clear</button>
+                </div>
+                <div class="multiselect-options" id="companyOptions"></div>
+              </div>
+            </div>
+          </label>
+          <label>
+            <span>Supplier Number <em>(6 digits)</em></span>
+            <input type="text" id="supplierNo" maxlength="6" placeholder="e.g. 123456" inputmode="numeric" pattern="[0-9]{6}" />
+          </label>
+          <label>
+            <span>Language</span>
+            <select id="language">
+              <option value="AU">AU</option>
+              <option value="DE">DE</option>
+              <option value="FR">FR</option>
+              <option value="IT">IT</option>
+              <option value="GB">GB</option>
+              <option value="TR">TR</option>
+              <option value="VN">VN</option>
+              <option value="TH" selected>TH</option>
+              <option value="JP">JP</option>
+              <option value="CN">CN</option>
+              <option value="HK">HK</option>
+              <option value="NL">NL</option>
+            </select>
+          </label>
+          <label>
+            <span>Validity Date <em>(DDMMYYYY)</em></span>
+            <input type="text" id="validityDate" maxlength="8" placeholder="31122026" inputmode="numeric" pattern="[0-9]{8}" />
+          </label>
+        </div>
+        <div class="generate-row">
+          <button id="generateBtn" class="btn btn-primary" disabled>Generate &amp; Download XML</button>
+          <p id="genHint" class="gen-hint">Upload a file first.</p>
+        </div>
+      </section>
+
+      <footer>
+        <p class="muted small">
+          Based on the validation logic of <code>Importlist_TH_XML (For MDM)</code>.
+          Outputs follow the <code>FUTURELOG/ARTICLES/ARTICLE</code> schema.
+        </p>
+      </footer>
+    </div>
+
+    <!-- Full-data modal -->
+    <div id="fullDataModal" class="full-modal hidden" role="dialog" aria-modal="true" aria-labelledby="fullDataTitle">
+      <div class="full-modal-inner">
+        <div class="full-modal-header">
+          <h2 id="fullDataTitle">Full Data View</h2>
+          <div class="full-modal-controls">
+            <label class="error-toggle hidden" id="errorFilterLabel" title="Show only rows that failed validation">
+              <input type="checkbox" id="errorFilterCheckbox" />
+              <span>Errors only (<span id="errorRowCount">0</span>)</span>
+            </label>
+            <input type="text" id="fullDataSearch" placeholder="Search any column…" class="search-input" title="Type to show only rows where any cell contains this text" />
+            <button type="button" id="closeFullBtn" class="btn btn-ghost btn-sm" aria-label="Close">✕ Close</button>
+          </div>
+        </div>
+        <p class="muted small" id="fullDataSummary" style="padding:0 20px;margin:0 0 8px"></p>
+        <div class="full-modal-body">
+          <table id="fullDataTable" class="full-table"></table>
+        </div>
+      </div>
+    </div>
+
+    <div id="loadingOverlay" class="loading-overlay hidden" role="status" aria-live="polite">
+      <div class="loading-box">
+        <div class="spinner"></div>
+        <p class="loading-msg" id="loadingMsg">Processing…</p>
+        <p class="loading-sub" id="loadingSub">This may take a moment for large files.</p>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
