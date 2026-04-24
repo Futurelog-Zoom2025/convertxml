@@ -6,9 +6,9 @@
 // doesn't matter. Header matching is tolerant: case-insensitive, whitespace-
 // collapsed, and <br>/<BR> tags stripped.
 //
-// Supported header languages: English, German (limited), Thai. Each field
-// carries all accepted spellings in its `aliases` list — the first one that
-// matches wins. To support a new language, add its translations as extra
+// Supported header languages: English, German (limited), Thai, Vietnamese. Each
+// field carries all accepted spellings in its `aliases` list — the first one
+// that matches wins. To support a new language, add its translations as extra
 // aliases; no other changes needed.
 //
 // VBA reference (Get_Data_From_File1145):
@@ -33,101 +33,125 @@ export const NA_MARKER = "__NA__";
 // - `mandatory`: if true, the file is rejected when no matching header is found.
 //
 // Thai translations were sourced from a real Thai-language Report 1145 file
-// (1624282723796736_TH_.xls). Thai has no case, so lowercasing is a no-op, but
-// the normalizer still collapses whitespace and strips <BR> tags — which
-// matters because the Thai "Article lead time" header has an embedded <BR>.
+// (1624282723796736_TH_.xls). Vietnamese translations came from a real
+// Vietnamese file (Report_1145_143277.xls). Both languages have diacritics
+// that JS .toLowerCase() handles correctly via Unicode, and the normalizer
+// collapses whitespace and strips <BR> tags — which matters because the
+// "Article lead time" header has an embedded <BR> in both languages.
 const HEADER_MAP = {
   descDE:           { display: "Item name (German)",          aliases: [
     "item name (german)", "item name german",
     "ชื่อสินค้า (ภาษาเยอรมัน)",
+    "tên mặt hàng (đức)",
   ], mandatory: false },
   descFR:           { display: "Item name (French)",          aliases: [
     "item name (french)", "item name french",
     "ชื่อสินค้า (ภาษาฝรั่งเศส)",
+    "tên mặt hàng (pháp)",
   ], mandatory: false },
   descIT:           { display: "Item name (Italian)",         aliases: [
     "item name (italian)", "item name italian",
     "ชื่อสินค้า (ภาษาอิตาลี)",
+    "tên mặt hàng (ý)",
   ], mandatory: false },
   descGB:           { display: "Item name (English)",         aliases: [
     "item name (english)", "item name english",
     "ชื่อสินค้า (ภาษาอังกฤษ)",
+    "tên mặt hàng (anh)",
   ], mandatory: false },
-  // descExtra is the "local language" column — literally labelled "Item name" in
-  // English files, and bare "ชื่อสินค้า" in Thai files (no language suffix).
-  // This alias COULD collide with the language-suffixed variants, but because
-  // header matching is exact-after-normalize (not prefix-matching), the longer
-  // suffixed headers go to their respective fields and only the bare "ชื่อสินค้า"
-  // column lands here.
+  // descExtra is the "local language" column. Labels vary widely by source:
+  //   English files: "Item name"
+  //   Thai files:    "ชื่อสินค้า" (bare, no language suffix)
+  //   Vietnamese:    "Danh mục" (literally "catalog/category" — FutureLog's
+  //                   translation quirk; confirmed against a real VN file)
+  // Exact-after-normalize matching means these won't collide with the
+  // language-suffixed descDE/FR/IT/GB columns that happen to start with the
+  // same base word.
   descExtra:        { display: "Item name",                   aliases: [
     "item name",
     "ชื่อสินค้า",
+    "danh mục",
   ], mandatory: false },
   itemNo:           { display: "Article no.",                 aliases: [
     "article no.", "article no", "article number",
     "artikel nr.", "artikel nr",
     "รหัสสินค้า",
+    "mã hàng",
   ], mandatory: true  },
   ean:              { display: "GTIN",                        aliases: [
     "gtin", "ean",
-    // Thai file uses the English "GTIN" literally — no translation needed.
+    // Both Thai and Vietnamese files use the English "GTIN" literally — no
+    // translation needed.
   ], mandatory: false },
   manArtId:         { display: "Manufacturer's item number",  aliases: [
     "manufacturer's item number", "manufacturers item number", "manufacturer item number",
     "หมายเลขสินค้าของผู้ผลิต",
+    "mã hàng của nhà sản xuất",
   ], mandatory: false },
   producer:         { display: "Producer",                    aliases: [
     "producer", "manufacturer",
     "ผู้ผลิต",
+    "sản xuất",
   ], mandatory: false },
   ou:               { display: "Order unit (OU)",             aliases: [
     "order unit (ou)", "order unit",
     "หน่วยการสั่งซื้อ (ou)",
+    "đơn vị đơn đặt hàng (ou)",
   ], mandatory: true  },
   cu:               { display: "Content unit (CU)",           aliases: [
     "content unit (cu)", "content unit",
     "หน่วยบรรจุภัณฑ์ (cu)",
+    "đơn vị nội dung (cu)",
   ], mandatory: true  },
-  // cuou (Packaging unit) shares the base word "หน่วยบรรจุภัณฑ์" with cu (Content
-  // unit) in Thai — cu is disambiguated by the "(CU)" suffix, cuou is the bare
-  // form. Both are distinct normalized strings so matching works cleanly.
+  // cuou (Packaging unit) shares the base word with cu (Content unit) in Thai
+  // but NOT in Vietnamese — cuou uses "gói hàng" (packaging) while cu uses
+  // "nội dung" (content). All translations produce distinct normalized strings.
   cuou:             { display: "Packaging unit",              aliases: [
     "packaging unit",
     "หน่วยบรรจุภัณฑ์",
+    "đơn vị gói hàng",
   ], mandatory: false },
   priceUnit:        { display: "Price per order unit",        aliases: [
     "price per order unit", "price",
     "ราคาต่อหน่วยการสั่งซื้อ",
+    "giá của mỗi đơn vị đặt hàng",
   ], mandatory: false },
   scaledPrice:      { display: "Scaled price",                aliases: [
     "scaled price",
     "สเกลราคา",
+    "giá theo quy mô",
   ], mandatory: false },
   origin:           { display: "Country of origin",           aliases: [
     "country of origin", "origin",
     "ประเทศต้นกำเนิด",
+    "nước xuất xứ",
   ], mandatory: false },
   customsNo:        { display: "Customs tariff number",       aliases: [
     "customs tariff number", "customs no.", "customs no", "customs number",
     "พิกัดศุลกากร",
+    "mã số thuế hải quan",
   ], mandatory: false },
   leadTime:         { display: "Article lead time",           aliases: [
     "article lead time", "lead time", "articlelead time", "article<br>lead time",
-    // Thai source: "สินค้า<BR>ระยะเวลาlead time" — after <BR> → space and collapse,
-    // this normalizes to "สินค้า ระยะเวลาlead time".
+    // Thai source: "สินค้า<BR>ระยะเวลาlead time" normalizes to "สินค้า ระยะเวลาlead time".
     "สินค้า ระยะเวลาlead time",
+    // VN source:   "Mặt hàng<BR>thời gian chờ" normalizes to "mặt hàng thời gian chờ".
+    "mặt hàng thời gian chờ",
   ], mandatory: true  },
   specUrl:          { display: "Item link supplier",          aliases: [
     "item link supplier", "spec url", "supplier link",
     "ลิงค์สินค้าผู้ขาย",
+    "sản phẩm liên kết của nhà cung cấp",
   ], mandatory: false },
   offerStart:       { display: "Start of special offer",      aliases: [
     "start of special offer", "offer start",
     "วันเริ่มข้อเสนอพิเศษ",
+    "bắt đầu chào giá ưu đãi",
   ], mandatory: false },
   offerEnd:         { display: "End of special offer",        aliases: [
     "end of special offer", "offer end",
     "ข้อเสนอพิเศษสิ้นสุด",
+    "kết thúc chào giá mặt hàng khuyến mãi",
   ], mandatory: false },
   customerId:       { display: "Customer ID",                 aliases: [
     "customer id", "customerid", "custid",
@@ -135,17 +159,24 @@ const HEADER_MAP = {
     "รหัสลูกค้า",  // Thai: "customer id" — added proactively; the sample file
                     // didn't have a Customer ID column to confirm the exact spelling,
                     // but this matches common FutureLog translations.
+    "mã khách hàng",  // Vietnamese: "customer code" — also added proactively;
+                        // the VN sample file didn't have this column either.
   ], mandatory: false },
 };
 
 // Normalize a header string so minor differences don't break matching.
+//  - Unicode NFC normalization (critical for Vietnamese and other diacritic-heavy
+//    languages — Excel often stores "ã" as decomposed "a + combining tilde",
+//    while our aliases are typed in composed form. Both must collapse to the
+//    same canonical bytes before comparison.)
 //  - strip <br>, <BR>, <br/>, <br /> tags
-//  - lowercase (no-op for Thai, meaningful for EN/DE)
+//  - lowercase (no-op for Thai, meaningful for EN/DE/VN)
 //  - collapse all whitespace into a single space
 //  - trim
 function normalizeHeader(h) {
   if (h === null || h === undefined) return "";
   return String(h)
+    .normalize("NFC")
     .replace(/<br\s*\/?>/gi, " ")
     .replace(/\s+/g, " ")
     .trim()
