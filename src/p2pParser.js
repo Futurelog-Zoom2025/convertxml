@@ -228,7 +228,12 @@ export function parseP2PFile(aoa, opts) {
     });
   }
 
-  return { supplier, division, rows };
+  // Surface whether the file has a NEW PRICE column, regardless of whether we
+  // looked for it as required. Lets the UI warn users who uploaded a file with
+  // NEW PRICE while the toggle is OFF (a common misconfiguration).
+  const hasNewPriceColumn = resolved.newPrice !== -1;
+
+  return { supplier, division, rows, hasNewPriceColumn };
 }
 
 /**
