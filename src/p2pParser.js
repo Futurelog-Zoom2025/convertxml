@@ -19,8 +19,8 @@ import {
   SUPPLIER_LABEL_PREFIXES, DIVISION_LABEL_PREFIXES,
 } from "./p2pHeaders.js";
 
-const HEADER_ROW_INDEX = 4;  // zero-based → Excel row 5
-const DATA_ROW_OFFSET  = 6;  // zero-based data start → Excel row 6
+const HEADER_ROW_INDEX = 4;  // zero-based → Excel row 5 (column headers)
+const DATA_ROW_OFFSET  = 5;  // zero-based → Excel row 6 (first data row)
 
 function normalizeHeader(h) {
   if (h === null || h === undefined) return "";
