@@ -417,6 +417,22 @@ input.invalid { border-color: var(--error); }
   color: var(--muted);
 }
 
+/* Inline warning shown inside a toggle's label area when the uploaded file
+   contradicts the toggle's current setting. Meant to be visually distinct
+   from the grey helper text above it so users notice. */
+.toggle-warning {
+  display: block;
+  margin-top: 6px !important;
+  padding: 4px 10px;
+  background: var(--warn-bg);
+  border-left: 3px solid var(--warn);
+  color: var(--warn) !important;
+  border-radius: 4px;
+  font-weight: 500;
+  font-size: 11.5px !important;
+  line-height: 1.45 !important;
+}
+
 /* Override the table's default word-break for numeric / identifier columns so
    values never wrap to two lines. Description columns (c-de / c-en / c-local)
    still wrap naturally because product names can be long. Overflowing numbers
