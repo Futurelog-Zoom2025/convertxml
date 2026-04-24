@@ -46,6 +46,7 @@ export function initP2PTab() {
     previewSummary: $("#p2pPreviewSummary"),
     previewTable:   $("#p2pPreviewTable"),
     showFullBtn:    $("#p2pShowFullBtn"),
+    statusFilter:   $("#p2pStatusFilter"),
     // Params
     supplierNo:   $("#p2pSupplierNo"),
     language:     $("#p2pLanguage"),
@@ -71,6 +72,7 @@ export function initP2PTab() {
     mergedRows: [],
     invalidCells: new Map(),
     summary: null,
+    statusFilter: "__all__", // currently selected value in the Status dropdown
   };
 
   // ---------- Status + generate gating ----------
@@ -109,6 +111,9 @@ export function initP2PTab() {
     state.mergedRows = [];
     state.invalidCells = new Map();
     state.summary = null;
+    state.statusFilter = "__all__";
+    els.statusFilter.innerHTML = '<option value="__all__">All statuses</option>';
+    els.statusFilter.value = "__all__";
     els.fileInput.value = "";
     els.r1145FileInput.value = "";
     els.fileInfo.classList.add("hidden");
@@ -364,13 +369,61 @@ export function initP2PTab() {
     return (d > 0 ? "+" : "") + d.toFixed(2);
   }
 
+  // Map the empty-status pill to its preview label once, so the dropdown
+  // can refer to it consistently. VBA flows tag normal matched rows with "".
+  const NORMAL_LABEL = "Normal (no change)";
+
+  // Rebuild the status-filter dropdown from the set of statuses present in
+  // the current merged data. Only statuses that actually appear are listed,
+  // each with a live count. Preserves the user's selection when possible.
+  function updateStatusFilterOptions(rows) {
+    const counts = new Map(); // statusValue -> count
+    for (const r of rows) {
+      const key = r.status || "";
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+
+    // Build option list, preferring a stable order: Normal first, then the
+    // others in the order they appear in the STATUS_PILL map.
+    const orderedKeys = [];
+    for (const k of Object.keys(STATUS_PILL)) {
+      if (counts.has(k)) orderedKeys.push(k);
+    }
+    // Surface any unknown statuses we didn't predefine (future-proofing)
+    for (const k of counts.keys()) {
+      if (!orderedKeys.includes(k)) orderedKeys.push(k);
+    }
+
+    const prevValue = state.statusFilter;
+    const opts = [`<option value="__all__">All statuses (${rows.length})</option>`];
+    for (const k of orderedKeys) {
+      const label = (STATUS_PILL[k]?.label === "—" ? NORMAL_LABEL : STATUS_PILL[k]?.label) || k || NORMAL_LABEL;
+      opts.push(`<option value="${escapeHtml(k)}">${escapeHtml(label)} (${counts.get(k)})</option>`);
+    }
+    els.statusFilter.innerHTML = opts.join("");
+
+    // Restore previous selection if it still exists; otherwise reset to All.
+    const valid = prevValue === "__all__" || counts.has(prevValue);
+    state.statusFilter = valid ? prevValue : "__all__";
+    els.statusFilter.value = state.statusFilter;
+  }
+
   function renderPreview(rows, invalidCells = new Map()) {
     // Inject the diff into each row for preview/modal lookup
     rows.forEach((r) => { r.__diff = diffFor(r); });
 
-    const showRows = rows.slice(0, 200);
+    // Refresh the dropdown options to match the current dataset
+    updateStatusFilterOptions(rows);
+
+    // Apply the active filter — but keep the ORIGINAL row index for
+    // invalidCells lookup, which is indexed against state.mergedRows.
+    const filtered = state.statusFilter === "__all__"
+      ? rows.map((r, idx) => ({ r, idx }))
+      : rows.map((r, idx) => ({ r, idx })).filter(({ r }) => (r.status || "") === state.statusFilter);
+
+    const showRows = filtered.slice(0, 200);
     const head = `<thead><tr>${PREVIEW_COLS.map((c) => `<th class="${c.cls}">${c.label}</th>`).join("")}</tr></thead>`;
-    const body = "<tbody>" + showRows.map((r, idx) => {
+    const body = "<tbody>" + showRows.map(({ r, idx }) => {
       const invalid = invalidCells.get(idx) || new Set();
       return "<tr>" + PREVIEW_COLS.map((c) => {
         let shown;
@@ -398,9 +451,18 @@ export function initP2PTab() {
     }).join("") + "</tbody>";
     els.previewTable.innerHTML = head + body;
 
-    els.previewSummary.textContent = rows.length > 200
-      ? `Showing first 200 of ${rows.length} rows — click "Show Full Data" to see all.`
-      : `Showing all ${rows.length} row${rows.length === 1 ? "" : "s"}.`;
+    // Summary reflects the current filter
+    const filterActive = state.statusFilter !== "__all__";
+    if (filterActive) {
+      const label = (STATUS_PILL[state.statusFilter]?.label === "—" ? NORMAL_LABEL : STATUS_PILL[state.statusFilter]?.label) || state.statusFilter;
+      els.previewSummary.textContent = filtered.length > 200
+        ? `Filter: "${label}" — showing first 200 of ${filtered.length} matching rows (of ${rows.length} total).`
+        : `Filter: "${label}" — ${filtered.length} matching row${filtered.length === 1 ? "" : "s"} (of ${rows.length} total).`;
+    } else {
+      els.previewSummary.textContent = rows.length > 200
+        ? `Showing first 200 of ${rows.length} rows — click "Show Full Data" to see all.`
+        : `Showing all ${rows.length} row${rows.length === 1 ? "" : "s"}.`;
+    }
     els.previewCard.classList.remove("hidden");
   }
 
@@ -531,6 +593,15 @@ export function initP2PTab() {
       columns: FULL_COLS,
       invalidCells: state.invalidCells,
     });
+  });
+
+  // Status filter — re-renders the preview using the currently-selected status.
+  // Only options present in the current round are shown (see updateStatusFilterOptions).
+  els.statusFilter.addEventListener("change", (e) => {
+    state.statusFilter = e.target.value;
+    if (state.mergedRows.length) {
+      renderPreview(state.mergedRows, state.invalidCells);
+    }
   });
 
   restrictToDigits(els.supplierNo);
