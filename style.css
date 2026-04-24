@@ -905,3 +905,41 @@ code {
 .p2p-legend .sw-updated  { background: #eaf4ea; }
 .p2p-legend .sw-fallback { background: #fcdede; }
 .p2p-legend .sw-nopu     { background: #fce6d0; }
+
+/* Options card sits above Step 1 — smaller, lighter styling because it's not a numbered step */
+.options-card {
+  background: var(--bg);
+  border: 1px dashed var(--border);
+  box-shadow: none;
+}
+.options-title {
+  font-size: 13px !important;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin: 0 0 12px !important;
+}
+
+/* Status filter dropdown on the preview header */
+.preview-controls {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.status-filter {
+  font-family: var(--font);
+  font-size: 13px;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  min-width: 180px;
+}
+.status-filter:focus {
+  outline: none;
+  border-color: var(--primary);
+  box-shadow: 0 0 0 3px rgba(201, 99, 66, 0.15);
+}
