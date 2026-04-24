@@ -146,19 +146,44 @@ export function initP2PTab() {
   }
 
   function showSupplierBanner(supplier, division) {
-    if (!supplier) {
+    // Hide the banner entirely when nothing was detected in the header rows.
+    // Hotels sometimes ship files with missing or messed-up supplier lines —
+    // that's OK, parsing still works, user just fills in the number manually.
+    if (!supplier && !division) {
       els.supplierBanner.classList.add("hidden");
       return;
     }
-    els.supplierName.textContent = supplier.name;
-    els.supplierIcon.textContent = initialsFromName(supplier.name);
-    const bits = [`Supplier no. ${supplier.num}`];
-    if (division) bits.push(`${division.name} (Division ${division.num})`);
+
+    // Prefer supplier as the "primary" name displayed. If only division was
+    // detected, surface that instead of a blank banner so the user still gets
+    // some context about which hotel/supplier this file relates to.
+    if (supplier && supplier.name) {
+      els.supplierName.textContent = supplier.name;
+      els.supplierIcon.textContent = initialsFromName(supplier.name);
+    } else if (division && division.name) {
+      els.supplierName.textContent = "(supplier name not detected)";
+      els.supplierIcon.textContent = initialsFromName(division.name);
+    } else {
+      els.supplierName.textContent = "(partial info detected)";
+      els.supplierIcon.textContent = "?";
+    }
+
+    const bits = [];
+    if (supplier?.num) bits.push(`Supplier no. ${supplier.num}`);
+    if (division) {
+      const divLabel =
+        division.num && division.name ? `${division.name} (Division ${division.num})` :
+        division.name ? division.name :
+        division.num ? `Division ${division.num}` : "";
+      if (divLabel) bits.push(divLabel);
+    }
+    if (!bits.length) bits.push("Enter the supplier number manually below.");
     els.supplierMeta.textContent = bits.join(" · ");
+
     els.supplierBanner.classList.remove("hidden");
 
-    // Auto-fill the supplier number param if it's empty and matches the 6-digit shape
-    if (!els.supplierNo.value && /^\d{6}$/.test(supplier.num)) {
+    // Auto-fill the supplier number param only when we have a clean 6-digit number.
+    if (supplier?.num && !els.supplierNo.value && /^\d{6}$/.test(supplier.num)) {
       els.supplierNo.value = supplier.num;
     }
   }
