@@ -78,16 +78,21 @@ export const DIVISION_LABEL_PREFIXES = ["Division", "Khách sạn"];
 
 /**
  * Ordered list of header strings for display in the "expected headers" popup.
- * Required fields are flagged so the UI can highlight them.
+ * Required fields are flagged so the UI can highlight them. The `newPrice`
+ * entry is omitted entirely when the toggle is OFF — in that case the parser
+ * doesn't look for a NEW PRICE column at all, so showing it in the example
+ * would just confuse users into thinking it's needed.
  */
 export function headerDisplayList(lang, useNewPriceCol) {
   const hdrs = P2P_HEADERS[lang] || P2P_HEADERS.EN;
-  return P2P_FIELD_KEYS.map((key) => ({
-    key,
-    label: hdrs[key],
-    required:
-      key === "articleNo" ||
-      (useNewPriceCol && key === "newPrice") ||
-      (!useNewPriceCol && key === "priceOrderUnit"),
-  }));
+  return P2P_FIELD_KEYS
+    .filter((key) => !(key === "newPrice" && !useNewPriceCol))
+    .map((key) => ({
+      key,
+      label: hdrs[key],
+      required:
+        key === "articleNo" ||
+        (useNewPriceCol && key === "newPrice") ||
+        (!useNewPriceCol && key === "priceOrderUnit"),
+    }));
 }
