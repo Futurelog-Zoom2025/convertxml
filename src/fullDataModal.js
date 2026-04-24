@@ -3,6 +3,8 @@
 //   - column-header sorting (asc → desc → none)
 //   - text search across all columns
 //   - "Errors only" toggle (visible only when there are any invalid cells)
+//   - Status filter dropdown (visible only when the dataset has status values
+//     — i.e. the P2P tab, not the R1145 tab)
 
 import { escapeHtml, runWithLoading } from "./shared.js";
 import { NA_MARKER } from "./reportParser.js";
@@ -16,6 +18,7 @@ const els = {
   errorFilterLabel:   document.getElementById("errorFilterLabel"),
   errorFilterCheckbox:document.getElementById("errorFilterCheckbox"),
   errorRowCount:      document.getElementById("errorRowCount"),
+  statusFilter:       document.getElementById("fullDataStatusFilter"),
 };
 
 // Per-open state — reset whenever a new dataset is shown
@@ -27,6 +30,8 @@ let view = {
   sortDir: null,
   showOnlyErrors: false,
   filter: "",
+  statusFilter: "__all__",
+  statusPillMap: {},   // forwarded by the caller; maps status value → {label, cls}
 };
 
 function displayValue(v) {
@@ -61,6 +66,11 @@ function compareValues(a, b) {
 function render() {
   const q = view.filter.trim().toLowerCase();
   let entries = view.rows.map((r, idx) => ({ r, idx }));
+
+  // Status filter: only active when the dataset has a `status` field.
+  if (view.statusFilter !== "__all__") {
+    entries = entries.filter((e) => (e.r.status || "") === view.statusFilter);
+  }
 
   if (view.showOnlyErrors) {
     entries = entries.filter((e) => view.invalidCells.has(e.idx));
@@ -97,10 +107,8 @@ function render() {
       const isNA = v === NA_MARKER;
       let cls = "";
       if (invalid.has(c.key)) cls = isNA ? "invalid-cell na-cell" : "invalid-cell";
-      // Let columns inject extra classes (for P2P status highlighting)
       if (c.cellClass) cls = (cls + " " + c.cellClass(r)).trim();
       const attr = cls ? ` class="${cls}"` : "";
-      // Columns may also inject custom HTML (e.g. status pills)
       const html = c.cellHtml ? c.cellHtml(r) : escapeHtml(shown);
       return `<td${attr} title="${escapeHtml(shown)}">${html}</td>`;
     }).join("") + "</tr>";
@@ -108,7 +116,12 @@ function render() {
 
   els.table.innerHTML = head + body;
 
+  // Build a human summary reflecting all active filters
   const parts = [`${entries.length} of ${view.rows.length} row${view.rows.length === 1 ? "" : "s"}`];
+  if (view.statusFilter !== "__all__") {
+    const label = (view.statusPillMap[view.statusFilter]?.label) || view.statusFilter || "(normal)";
+    parts.push(`status: "${label}"`);
+  }
   if (view.showOnlyErrors) parts.push("errors only");
   if (q) parts.push(`search: "${view.filter}"`);
   if (view.sortCol) {
@@ -130,7 +143,56 @@ function refreshErrorToggle() {
   }
 }
 
-export function openFullDataModal({ rows, columns, invalidCells = new Map(), loadingHint = "" }) {
+// Populate the status dropdown with only the statuses present in the current
+// dataset. If there are no status values at all, hide the dropdown entirely
+// (R1145 tab case — rows don't have a `status` field).
+function refreshStatusFilter() {
+  const counts = new Map();
+  for (const r of view.rows) {
+    if (r && typeof r.status !== "undefined") {
+      const k = r.status || "";
+      counts.set(k, (counts.get(k) || 0) + 1);
+    }
+  }
+
+  if (counts.size === 0) {
+    els.statusFilter.classList.add("hidden");
+    view.statusFilter = "__all__";
+    return;
+  }
+
+  els.statusFilter.classList.remove("hidden");
+
+  // Preserve current selection if it still applies
+  const prev = view.statusFilter;
+
+  // Order: keys in the order they appear in statusPillMap (if available), then
+  // any unknown values appended at the end.
+  const preferred = Object.keys(view.statusPillMap || {});
+  const orderedKeys = [];
+  for (const k of preferred) if (counts.has(k)) orderedKeys.push(k);
+  for (const k of counts.keys()) if (!orderedKeys.includes(k)) orderedKeys.push(k);
+
+  // Normal-row label uses "Normal (no change)" instead of "—" in the dropdown
+  const labelFor = (k) => {
+    const pill = view.statusPillMap[k];
+    if (pill && pill.label === "—") return "Normal (no change)";
+    if (pill) return pill.label;
+    return k || "Normal (no change)";
+  };
+
+  const opts = [`<option value="__all__">All statuses (${view.rows.length})</option>`];
+  for (const k of orderedKeys) {
+    opts.push(`<option value="${escapeHtml(k)}">${escapeHtml(labelFor(k))} (${counts.get(k)})</option>`);
+  }
+  els.statusFilter.innerHTML = opts.join("");
+
+  const valid = prev === "__all__" || counts.has(prev);
+  view.statusFilter = valid ? prev : "__all__";
+  els.statusFilter.value = view.statusFilter;
+}
+
+export function openFullDataModal({ rows, columns, invalidCells = new Map(), loadingHint = "", statusPillMap = {} }) {
   view = {
     rows,
     columns,
@@ -139,10 +201,13 @@ export function openFullDataModal({ rows, columns, invalidCells = new Map(), loa
     sortDir: null,
     showOnlyErrors: false,
     filter: "",
+    statusFilter: "__all__",
+    statusPillMap,
   };
   els.errorFilterCheckbox.checked = false;
   els.search.value = "";
   refreshErrorToggle();
+  refreshStatusFilter();
 
   runWithLoading(
     "Loading full data…",
@@ -154,11 +219,9 @@ export function openFullDataModal({ rows, columns, invalidCells = new Map(), loa
   });
 }
 
-function closeModal() {
-  els.modal.classList.add("hidden");
-}
+function closeModal() { els.modal.classList.add("hidden"); }
 
-// One-time wiring (module loaded once at startup)
+// One-time wiring
 els.closeBtn.addEventListener("click", closeModal);
 els.modal.addEventListener("click", (e) => { if (e.target === els.modal) closeModal(); });
 document.addEventListener("keydown", (e) => {
@@ -170,18 +233,20 @@ els.table.addEventListener("click", (e) => {
   const col = th.dataset.col;
   if (!col) return;
   if (view.sortCol !== col) {
-    view.sortCol = col;
-    view.sortDir = "asc";
+    view.sortCol = col; view.sortDir = "asc";
   } else if (view.sortDir === "asc") {
     view.sortDir = "desc";
   } else {
-    view.sortCol = null;
-    view.sortDir = null;
+    view.sortCol = null; view.sortDir = null;
   }
   render();
 });
 els.errorFilterCheckbox.addEventListener("change", (e) => {
   view.showOnlyErrors = e.target.checked;
+  render();
+});
+els.statusFilter.addEventListener("change", (e) => {
+  view.statusFilter = e.target.value;
   render();
 });
 let filterTimer = null;
