@@ -1,5 +1,6 @@
-// Port of the VBA validation logic in generate_xml / Convert_to_UNI
-// Returns { errors: [...], warnings: [...], invalidCells: Map<rowIdx,Set<col>> }
+// Port of the VBA validation logic in generate_xml / Convert_to_UNI.
+// Errors sharing a common cause are collapsed into a single line listing
+// every affected row — minimal identifier, all rows shown.
 
 import { VALID_UNITS, VALID_COUNTRIES, VALID_LANGUAGES } from "./referenceData.js";
 import { NA_MARKER } from "./reportParser.js";
@@ -11,28 +12,15 @@ function excelRow(idx) {
   return idx + DATA_ROW_OFFSET;
 }
 
-// Human-readable labels used in error messages
 const KEY_LABELS = {
-  pos: "Pos",
-  descDE: "German description",
-  descFR: "French description",
-  descIT: "Italian description",
-  descGB: "English description",
-  descExtra: "Local description",
   itemNo: "Article no.",
   ean: "EAN",
-  manArtId: "Mfg Item No",
   ou: "Order unit (OU)",
   cu: "Content unit (CU)",
-  cuou: "CU per OU",
   priceOU: "Price",
   origin: "Origin",
-  customsNo: "Customs No.",
   availability: "Availability",
   leadTimeRaw: "Lead time",
-  specUrl: "Spec URL",
-  offerStart: "Offer Start",
-  offerEnd: "Offer End",
   customerId: "Customer ID",
 };
 
@@ -45,11 +33,21 @@ function isNA(v) {
   return v === NA_MARKER;
 }
 
-// Compact list rendering for error bodies. Keeps messages short:
-// shows up to `limit` items, then "and N more".
-function compact(items, limit = 10) {
-  if (items.length <= limit) return items.join("\n");
-  return items.slice(0, limit).join("\n") + `\n…and ${items.length - limit} more`;
+// List every unique row number, sorted ascending — no truncation.
+function fmtRows(rowNums) {
+  return [...new Set(rowNums)].sort((a, b) => a - b).join(", ");
+}
+
+// Build a grouped-error message.
+// groups: Array<{ key: string, rows: number[] }>
+// One group → inline on one line. Multiple groups → one line per group.
+function formatGrouped(count, title, groups) {
+  if (groups.length === 1) {
+    const g = groups[0];
+    return `${count} ${title} : ${g.key} — rows ${fmtRows(g.rows)}`;
+  }
+  const body = groups.map((g) => `  ${g.key} — rows ${fmtRows(g.rows)}`).join("\n");
+  return `${count} ${title}:\n${body}`;
 }
 
 export function validate(rows, params) {
@@ -67,7 +65,7 @@ export function validate(rows, params) {
     return { errors, warnings, invalidCells };
   }
 
-  // ---------- Parameter checks ----------
+  // ========== Parameter checks ==========
   if (!/^\d{3}$/.test(params.companyId || "")) {
     errors.push("Company ID must be 3 digits.");
   }
@@ -81,7 +79,7 @@ export function validate(rows, params) {
     errors.push("Validity Date must be 8 digits (DDMMYYYY).");
   }
 
-  // ---------- Customer ID "0000" core-entry rule ----------
+  // ========== Customer ID "0000" core-entry rule ==========
   const itemHas0000 = new Set();
   const allItemNos = new Set();
   let anyHas0000 = false;
@@ -102,8 +100,7 @@ export function validate(rows, params) {
       if (!itemHas0000.has(it)) missing.push(it);
     }
     if (missing.length) {
-      const list = compact(missing, 10);
-      errors.push(`Missing Customer ID "0000" for ${missing.length} item(s):\n${list}`);
+      errors.push(`${missing.length} item(s) missing Customer ID "0000" : ${missing.join(", ")}`);
       rows.forEach((r, idx) => {
         if (missing.includes(String(r.itemNo || "").trim())) {
           markCell(idx, "itemNo");
@@ -113,48 +110,60 @@ export function validate(rows, params) {
     }
   }
 
-  // ---------- Mandatory fields ----------
+  // ========== Mandatory fields (grouped by column) ==========
   const mandatoryKeys = ["itemNo", "ou", "cu", "leadTimeRaw"];
-
-  const blankDetails = [];
-  const naDetails = [];
+  const naByColumn = new Map();
+  const blankByColumn = new Map();
 
   rows.forEach((r, idx) => {
     for (const k of mandatoryKeys) {
       if (isNA(r[k])) {
         markCell(idx, k);
         if (k === "leadTimeRaw") markCell(idx, "availability");
-        naDetails.push(`  Row ${excelRow(idx)}: ${KEY_LABELS[k] || k}`);
+        if (!naByColumn.has(k)) naByColumn.set(k, []);
+        naByColumn.get(k).push(excelRow(idx));
       } else if (isBlank(r[k])) {
         markCell(idx, k);
         if (k === "leadTimeRaw") markCell(idx, "availability");
-        blankDetails.push(`  Row ${excelRow(idx)}: ${KEY_LABELS[k] || k}`);
+        if (!blankByColumn.has(k)) blankByColumn.set(k, []);
+        blankByColumn.get(k).push(excelRow(idx));
       }
     }
   });
 
-  if (naDetails.length) {
-    errors.push(
-      `${naDetails.length} cell(s) contain #N/A — please replace with a real value:\n${compact(naDetails, 10)}`
-    );
-  }
-  if (blankDetails.length) {
-    errors.push(
-      `${blankDetails.length} required cell(s) are blank:\n${compact(blankDetails, 10)}`
-    );
+  if (naByColumn.size > 0) {
+    const total = Array.from(naByColumn.values()).reduce((s, rs) => s + rs.length, 0);
+    const groups = Array.from(naByColumn.entries()).map(([k, rs]) => ({
+      key: KEY_LABELS[k] || k,
+      rows: rs,
+    }));
+    errors.push(formatGrouped(total, "#N/A cell(s)", groups));
   }
 
-  // ---------- Duplicate / conflict checks ----------
+  if (blankByColumn.size > 0) {
+    const total = Array.from(blankByColumn.values()).reduce((s, rs) => s + rs.length, 0);
+    const groups = Array.from(blankByColumn.entries()).map(([k, rs]) => ({
+      key: KEY_LABELS[k] || k,
+      rows: rs,
+    }));
+    errors.push(formatGrouped(total, "blank required cell(s)", groups));
+  }
+
+  // ========== Duplicate / conflict checks ==========
+  // Detection is still per (Item, Cust) pair — duplicates are allowed across
+  // different Customer IDs — but the display is regrouped by Item only so the
+  // error bubble shows one line per Article no. with every affected row.
   const tripletSeen = new Map();
-  const eanToItem = new Map();
-  const itemToEan = new Map();
+  const eanFirstSeen = new Map();
+  const itemEanFirstSeen = new Map();
   const itemNoFirstSeen = new Map();
   const itemCustSeen = new Map();
-  const duplicateTriplets = [];
-  const eanConflicts = [];
-  const itemEanMismatches = [];
-  const itemCustDuplicates = [];
-  const itemNoNoCust = [];
+
+  const itemCustDupRows = new Map();      // itemNo -> [rowNums] (duplicates only)
+  const tripletDupByItem = new Map();     // itemNo -> [rowNums] (duplicates only)
+  const eanConflictGroups = new Map();    // ean -> { firstRow, conflictRows[] }
+  const itemEanConflictGroups = new Map();// itemNo -> { firstRow, conflictRows[] }
+  const itemNoRepeatNoCust = new Map();   // itemNo -> [rowNums]
 
   rows.forEach((r, idx) => {
     const itemNo = String(r.itemNo || "").trim();
@@ -166,13 +175,13 @@ export function validate(rows, params) {
         if (cust === "") {
           markCell(idx, "itemNo");
           markCell(idx, "customerId");
-          itemNoNoCust.push(`  Row ${excelRow(idx)}: Item "${itemNo}" repeats without Customer ID`);
+          if (!itemNoRepeatNoCust.has(itemNo)) itemNoRepeatNoCust.set(itemNo, []);
+          itemNoRepeatNoCust.get(itemNo).push(excelRow(idx));
         }
       } else {
         itemNoFirstSeen.set(itemNo, idx);
       }
 
-      // Article no. must be unique per Customer ID
       if (cust !== "") {
         const itemCustKey = `${itemNo}|${cust}`;
         if (itemCustSeen.has(itemCustKey)) {
@@ -181,9 +190,8 @@ export function validate(rows, params) {
           markCell(firstIdx, "customerId");
           markCell(idx, "itemNo");
           markCell(idx, "customerId");
-          itemCustDuplicates.push(
-            `  Row ${excelRow(idx)}: Item "${itemNo}" + Cust "${cust}" (also row ${excelRow(firstIdx)})`
-          );
+          if (!itemCustDupRows.has(itemNo)) itemCustDupRows.set(itemNo, []);
+          itemCustDupRows.get(itemNo).push(excelRow(idx));
         } else {
           itemCustSeen.set(itemCustKey, idx);
         }
@@ -196,123 +204,169 @@ export function validate(rows, params) {
         const firstIdx = tripletSeen.get(key);
         markCell(firstIdx, "itemNo"); markCell(firstIdx, "ean"); markCell(firstIdx, "customerId");
         markCell(idx, "itemNo"); markCell(idx, "ean"); markCell(idx, "customerId");
-        duplicateTriplets.push(
-          `  Row ${excelRow(idx)}: Item ${itemNo} / Cust ${cust} / EAN ${ean}`
-        );
+        if (!tripletDupByItem.has(itemNo)) tripletDupByItem.set(itemNo, []);
+        tripletDupByItem.get(itemNo).push(excelRow(idx));
       } else {
         tripletSeen.set(key, idx);
       }
 
-      if (eanToItem.has(ean)) {
-        if (eanToItem.get(ean) !== itemNo) {
+      // EAN conflict — same EAN used with a different item
+      if (eanFirstSeen.has(ean)) {
+        const first = eanFirstSeen.get(ean);
+        if (first.itemNo !== itemNo) {
           markCell(idx, "ean");
-          eanConflicts.push(
-            `  Row ${excelRow(idx)}: EAN ${ean} → items ${itemNo} vs ${eanToItem.get(ean)}`
-          );
+          if (!eanConflictGroups.has(ean)) {
+            eanConflictGroups.set(ean, {
+              firstRow: excelRow(first.firstIdx),
+              conflictRows: [],
+            });
+          }
+          eanConflictGroups.get(ean).conflictRows.push(excelRow(idx));
         }
       } else {
-        eanToItem.set(ean, itemNo);
+        eanFirstSeen.set(ean, { itemNo, firstIdx: idx });
       }
 
-      if (itemToEan.has(itemNo)) {
-        if (itemToEan.get(itemNo) !== ean) {
+      // Item/EAN mismatch — same item used with a different EAN
+      if (itemEanFirstSeen.has(itemNo)) {
+        const first = itemEanFirstSeen.get(itemNo);
+        if (first.ean !== ean) {
           markCell(idx, "itemNo");
-          itemEanMismatches.push(
-            `  Row ${excelRow(idx)}: Item ${itemNo} → EANs ${ean} vs ${itemToEan.get(itemNo)}`
-          );
+          if (!itemEanConflictGroups.has(itemNo)) {
+            itemEanConflictGroups.set(itemNo, {
+              firstRow: excelRow(first.firstIdx),
+              conflictRows: [],
+            });
+          }
+          itemEanConflictGroups.get(itemNo).conflictRows.push(excelRow(idx));
         }
       } else {
-        itemToEan.set(itemNo, ean);
+        itemEanFirstSeen.set(itemNo, { ean, firstIdx: idx });
       }
     }
   });
 
-  if (itemNoNoCust.length) {
-    errors.push(
-      `${itemNoNoCust.length} item(s) repeat without a Customer ID:\n${compact(itemNoNoCust, 10)}`
-    );
-  }
-  if (itemCustDuplicates.length) {
-    errors.push(
-      `${itemCustDuplicates.length} duplicate Article no. + Customer ID:\n${compact(itemCustDuplicates, 10)}`
-    );
-  }
-  if (duplicateTriplets.length) {
-    errors.push(
-      `${duplicateTriplets.length} duplicate Item + Cust + EAN row(s):\n${compact(duplicateTriplets, 10)}`
-    );
-  }
-  if (eanConflicts.length) {
-    errors.push(
-      `Same EAN used with different items:\n${compact(eanConflicts, 10)}`
-    );
-  }
-  if (itemEanMismatches.length) {
-    errors.push(
-      `Same Item No used with different EANs:\n${compact(itemEanMismatches, 10)}`
-    );
+  // --- Emit grouped duplicate errors ---
+
+  if (itemNoRepeatNoCust.size > 0) {
+    const total = Array.from(itemNoRepeatNoCust.values()).reduce((s, rs) => s + rs.length, 0);
+    const groups = Array.from(itemNoRepeatNoCust.entries()).map(([itemNo, rs]) => ({
+      key: `Item "${itemNo}"`,
+      rows: rs,
+    }));
+    errors.push(formatGrouped(total, "Article no. repeats without Customer ID", groups));
   }
 
-  // ---------- Unit / Country lists ----------
-  const badUnits = [];
+  if (itemCustDupRows.size > 0) {
+    const total = Array.from(itemCustDupRows.values()).reduce((s, rs) => s + rs.length, 0);
+    const groups = Array.from(itemCustDupRows.entries()).map(([itemNo, rs]) => ({
+      key: `Item "${itemNo}"`,
+      rows: rs,
+    }));
+    errors.push(formatGrouped(total, "duplicate Article no.", groups));
+  }
+
+  if (tripletDupByItem.size > 0) {
+    const total = Array.from(tripletDupByItem.values()).reduce((s, rs) => s + rs.length, 0);
+    const groups = Array.from(tripletDupByItem.entries()).map(([itemNo, rs]) => ({
+      key: `Item "${itemNo}"`,
+      rows: rs,
+    }));
+    errors.push(formatGrouped(total, "duplicate Article no. + EAN", groups));
+  }
+
+  if (eanConflictGroups.size > 0) {
+    const total = Array.from(eanConflictGroups.values()).reduce((s, g) => s + g.conflictRows.length, 0);
+    const groups = Array.from(eanConflictGroups.entries()).map(([ean, g]) => ({
+      key: `EAN ${ean}`,
+      rows: g.conflictRows,
+    }));
+    errors.push(formatGrouped(total, "EAN used with different Article no.", groups));
+  }
+
+  if (itemEanConflictGroups.size > 0) {
+    const total = Array.from(itemEanConflictGroups.values()).reduce((s, g) => s + g.conflictRows.length, 0);
+    const groups = Array.from(itemEanConflictGroups.entries()).map(([itemNo, g]) => ({
+      key: `Item "${itemNo}"`,
+      rows: g.conflictRows,
+    }));
+    errors.push(formatGrouped(total, "Article no. used with different EANs", groups));
+  }
+
+  // ========== Unit / Country lists ==========
+  const badUnitsByCode = new Map();
   rows.forEach((r, idx) => {
     const ou = String(r.ou || "").trim();
     const cu = String(r.cu || "").trim();
     if (ou !== "" && !VALID_UNITS.has(ou)) {
       markCell(idx, "ou");
-      badUnits.push(`  Row ${excelRow(idx)}: OU "${ou}"`);
+      const key = `OU "${ou}"`;
+      if (!badUnitsByCode.has(key)) badUnitsByCode.set(key, []);
+      badUnitsByCode.get(key).push(excelRow(idx));
     }
     if (cu !== "" && !VALID_UNITS.has(cu)) {
       markCell(idx, "cu");
-      badUnits.push(`  Row ${excelRow(idx)}: CU "${cu}"`);
+      const key = `CU "${cu}"`;
+      if (!badUnitsByCode.has(key)) badUnitsByCode.set(key, []);
+      badUnitsByCode.get(key).push(excelRow(idx));
     }
   });
-  if (badUnits.length) {
-    errors.push(`Invalid unit code(s):\n${compact(badUnits, 10)}`);
+  if (badUnitsByCode.size > 0) {
+    const total = Array.from(badUnitsByCode.values()).reduce((s, rs) => s + rs.length, 0);
+    const groups = Array.from(badUnitsByCode.entries()).map(([key, rs]) => ({ key, rows: rs }));
+    errors.push(formatGrouped(total, "invalid unit code(s)", groups));
   }
 
-  const badCountries = [];
+  const badCountriesByCode = new Map();
   rows.forEach((r, idx) => {
     const c = String(r.origin || "").trim();
     if (c !== "" && !VALID_COUNTRIES.has(c)) {
       markCell(idx, "origin");
-      badCountries.push(`  Row ${excelRow(idx)}: "${c}"`);
+      const key = `"${c}"`;
+      if (!badCountriesByCode.has(key)) badCountriesByCode.set(key, []);
+      badCountriesByCode.get(key).push(excelRow(idx));
     }
   });
-  if (badCountries.length) {
-    errors.push(`Invalid country code(s):\n${compact(badCountries, 10)}`);
+  if (badCountriesByCode.size > 0) {
+    const total = Array.from(badCountriesByCode.values()).reduce((s, rs) => s + rs.length, 0);
+    const groups = Array.from(badCountriesByCode.entries()).map(([key, rs]) => ({ key, rows: rs }));
+    errors.push(formatGrouped(total, "invalid country code(s)", groups));
   }
 
-  // ---------- Price checks ----------
-  const negativePrices = [];
+  // ========== Price checks ==========
+  const negativePricesByItem = new Map();
   const zeroPriceRows = [];
   rows.forEach((r, idx) => {
     const p = r.priceOU;
     if (typeof p === "number") {
       if (p < 0) {
         markCell(idx, "priceOU");
-        negativePrices.push(`  Row ${excelRow(idx)}: Item "${r.itemNo}" = ${p}`);
+        const key = String(r.itemNo || "").trim();
+        if (!negativePricesByItem.has(key)) {
+          negativePricesByItem.set(key, { price: p, rows: [] });
+        }
+        negativePricesByItem.get(key).rows.push(excelRow(idx));
       } else if (p === 0) {
         zeroPriceRows.push(excelRow(idx));
       }
     }
   });
 
-  if (negativePrices.length) {
-    errors.push(
-      `${negativePrices.length} negative price(s) — not allowed:\n${compact(negativePrices, 10)}`
-    );
+  if (negativePricesByItem.size > 0) {
+    const total = Array.from(negativePricesByItem.values()).reduce((s, g) => s + g.rows.length, 0);
+    const groups = Array.from(negativePricesByItem.entries()).map(([itemNo, g]) => ({
+      key: `Item "${itemNo}" = ${g.price}`,
+      rows: g.rows,
+    }));
+    errors.push(formatGrouped(total, "negative price(s)", groups));
   }
 
   if (zeroPriceRows.length) {
-    const sample = zeroPriceRows.slice(0, 10).join(", ");
-    const more = zeroPriceRows.length > 10 ? `, +${zeroPriceRows.length - 10} more` : "";
     warnings.push(
-      `${zeroPriceRows.length} row(s) have price = 0 (row${zeroPriceRows.length === 1 ? "" : "s"}: ${sample}${more}). Check if a price column is missing.`
+      `${zeroPriceRows.length} row(s) have price = 0 (rows: ${zeroPriceRows.join(", ")}). Check if a price column is missing.`
     );
   }
 
-  // Warning: all availability == 0
   const allAvailZero = rows.every((r) => {
     const v = r.availability;
     return v === 0 || v === "0" || v === "";
