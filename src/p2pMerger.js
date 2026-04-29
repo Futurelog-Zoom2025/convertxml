@@ -52,6 +52,20 @@ function r1145PriceOf(r) {
 // Decide the final price + availability + status for a merged row.
 // Mirrors Module8's price-fallback + Open Lead Time block, plus the new
 // close-to-0 behavior described at the top of this file.
+// Threshold for what counts as a "real new price" in the P2P column.
+//
+// Originally the VBA used 1 as the cutoff (e.g. `> 1` to bump lead time, `<= 1`
+// to fall back to R1145). That worked when prices were always whole-currency
+// values like 1335 baht. But real hotel files often have per-unit prices below
+// 1 currency unit (e.g. 0.81 USD/kg, 0.39 USD/piece) which the old threshold
+// incorrectly flagged as placeholders.
+//
+// 0.01 is small enough to admit any genuine price while still leaving room for
+// the "0" / blank / unfilled case (and a hypothetical "0.01" placeholder) to
+// trigger the fallback. Change here if the business ever wants different
+// behavior — every threshold check below uses this constant.
+const REAL_PRICE_THRESHOLD = 0.01;
+
 function computePriceAndStatus({ p2pRow, r1145Row, opts }) {
   const useNewPriceCol = !!opts.useNewPriceCol;
   const openLeadTime   = !!opts.openLeadTime;
@@ -63,11 +77,16 @@ function computePriceAndStatus({ p2pRow, r1145Row, opts }) {
 
   let finalPrice, status, availability;
 
-  if (p2pPrice > 0) {
+  // "Has a real new price" — strictly greater than the threshold.
+  // Prices at or below the threshold are treated as missing/placeholder and
+  // trigger the fallback-to-R1145 branch.
+  const hasRealNewPrice = p2pPrice > REAL_PRICE_THRESHOLD;
+
+  if (hasRealNewPrice) {
     finalPrice = p2pPrice;
     availability = r1145LtOrZero;
 
-    if (openLeadTime && p2pPrice > 1) {
+    if (openLeadTime) {
       // Module8: "Open lead time if there is price in new price column"
       // sets lead time to 1 and stamps "Open lead time".
       availability = "1";
@@ -111,6 +130,7 @@ function buildMatchedRow({ p2pRow, r1145Row, opts, pos }) {
 // origin are unknown — validator will flag missing mandatory fields.
 function buildP2POnlyRow({ p2pRow, opts, pos }) {
   const price = p2pPriceFor(p2pRow, opts.useNewPriceCol);
+  const hasRealNewPrice = price > REAL_PRICE_THRESHOLD;
   return {
     pos,
     descDE: "",
@@ -131,8 +151,8 @@ function buildP2POnlyRow({ p2pRow, opts, pos }) {
     priceLevel: "",
     origin: p2pRow.originCountry || "",
     customsNo: "",
-    availability: opts.openLeadTime && price > 1 ? "1" : "0",
-    leadTimeRaw:  opts.openLeadTime && price > 1 ? "1" : "0",
+    availability: opts.openLeadTime && hasRealNewPrice ? "1" : "0",
+    leadTimeRaw:  opts.openLeadTime && hasRealNewPrice ? "1" : "0",
     specUrl: "", offerStart: "", offerEnd: "",
     customerId: "0000",
     __oldPrice: "",
