@@ -291,14 +291,15 @@ export function parseReport1145(aoa) {
 
     // Price logic
     //
-    // Three cases for the source-file Scaled price column:
-    //   1. > 0 (a real scaled price)  → use it, lead time = the source lead time
-    //   2. = 0 (explicit zero)        → keep 0 as the price, close lead time to 0
-    //   3. blank / missing            → fall back to Price per order unit, close lead time to 0
+    // Cases for the source-file Scaled price + Price per order unit columns:
+    //   1. Scaled > 0                          → use it, lead time = source lead time
+    //   2. Scaled = 0                          → keep 0 as price, lead time = 0
+    //   3. Scaled blank, column O has value    → use column O, lead time = 0
+    //   4. Scaled blank, column O blank        → price = 0, lead time = 0
     //
-    // Cases 2 and 3 differ in WHERE the price comes from but agree on closing
-    // the lead time. The validator surfaces a warning for each so the user
-    // can verify it was intentional.
+    // Cases 2, 3, and 4 all close the lead time. Each emits its own warning
+    // so the user can tell why each row was treated this way. Case 4 is the
+    // only one where there's no price information anywhere in the source row.
     const priceOU = toNumericOrEmpty(src[resolved.priceUnit]);
     const scaled = toNumericOrEmpty(src[resolved.scaledPrice]);
     const leadTime = getCell(src, resolved, "leadTime");
@@ -310,23 +311,33 @@ export function parseReport1145(aoa) {
     let usedScaled = false;
     let scaledPriceWasZero = false;
     let scaledPriceWasBlank = false;
+    let priceBothBlank = false;
     if (scaledRounded === 0) {
       // Case 2: explicit 0 — keep the 0 as the final price (do NOT fall back).
       finalPrice = 0;
       scaledPriceWasZero = true;
     } else if (scaledRounded === "") {
-      // Case 3: blank — fall back to Price per order unit.
-      finalPrice = priceOU === "" ? 0 : priceOU;
-      scaledPriceWasBlank = true;
+      // Case 3 or 4: scaled is blank, so we fall back to column O.
+      if (priceOU === "") {
+        // Case 4: BOTH columns blank — no price information anywhere.
+        // Fill the output price as 0 and close lead time. Marked as a
+        // separate flag so the validator can warn distinctly from the
+        // ordinary scaled-blank case (where column O had a real value).
+        finalPrice = 0;
+        priceBothBlank = true;
+      } else {
+        // Case 3: scaled blank but column O has a value — use column O.
+        finalPrice = priceOU;
+        scaledPriceWasBlank = true;
+      }
     } else {
       // Case 1: real scaled price.
       finalPrice = scaledRounded;
       usedScaled = true;
     }
 
-    // Lead time follows the scaled-price branch: only when a REAL scaled
-    // price was used (case 1) does it carry through; both fallback cases
-    // close it to "0".
+    // Lead time follows: only Case 1 carries the source lead time through.
+    // All other cases (2, 3, 4) close the lead time to "0".
     const availability = usedScaled ? leadTime : "0";
 
     const row = {
@@ -353,6 +364,7 @@ export function parseReport1145(aoa) {
       // with `__` to signal they're internal-only and shouldn't reach XML.
       __scaledPriceWasZero: scaledPriceWasZero,
       __scaledPriceWasBlank: scaledPriceWasBlank,
+      __priceBothBlank: priceBothBlank,
       specUrl: getCell(src, resolved, "specUrl"),
       offerStart: getCell(src, resolved, "offerStart"),
       offerEnd: getCell(src, resolved, "offerEnd"),
