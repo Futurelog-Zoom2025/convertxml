@@ -33,9 +33,47 @@ function isNA(v) {
   return v === NA_MARKER;
 }
 
-// List every unique row number, sorted ascending — no truncation.
+// List every unique row number, sorted ascending, with consecutive runs
+// collapsed into ranges. Examples:
+//   [5, 6, 7, 8, 9, 12, 14, 15, 16]  →  "5-9, 12, 14-16"
+//   [8, 9]                            →  "8, 9"  (run of 2 stays as-is for clarity)
+//   [5, 6, 7]                         →  "5-7"
+// Rationale: real-world bulk warnings (e.g. "1908 rows have Scaled price
+// blank") used to print every single row number, making the message unusable.
+// Ranges preserve all the information without the wall of text.
 function fmtRows(rowNums) {
-  return [...new Set(rowNums)].sort((a, b) => a - b).join(", ");
+  const sorted = [...new Set(rowNums)].sort((a, b) => a - b);
+  if (sorted.length === 0) return "";
+
+  const parts = [];
+  let runStart = sorted[0];
+  let runEnd = sorted[0];
+
+  const flushRun = () => {
+    if (runStart === runEnd) {
+      parts.push(String(runStart));
+    } else if (runEnd === runStart + 1) {
+      // Run of exactly 2 → list both rather than "5-6" (slightly clearer in
+      // small messages and only one extra char).
+      parts.push(`${runStart}, ${runEnd}`);
+    } else {
+      parts.push(`${runStart}-${runEnd}`);
+    }
+  };
+
+  for (let i = 1; i < sorted.length; i++) {
+    const n = sorted[i];
+    if (n === runEnd + 1) {
+      runEnd = n;
+    } else {
+      flushRun();
+      runStart = n;
+      runEnd = n;
+    }
+  }
+  flushRun();
+
+  return parts.join(", ");
 }
 
 // Build a grouped-error message.
@@ -304,8 +342,16 @@ export function validate(rows, params) {
 
   rows.forEach((r, idx) => {
     const ean = String(r.ean || "").trim();
-    // Skip blank or all-zero placeholders — these are "no GTIN" by convention.
-    if (ean === "" || /^0+$/.test(ean)) return;
+    // Skip placeholder GTINs — these are "no GTIN" by convention. Three cases:
+    //  - blank / empty cell
+    //  - all zeros ("0000000000000")
+    //  - 13 chars where the leading 12 are zeros ("0000000000001", "0000000000007", etc.)
+    // The third case catches sentinel values some hotels use as "we don't have a
+    // GTIN yet, here's a row counter." Real GTINs always have a non-zero GS1
+    // prefix in the first few digits, so an all-zero prefix can never be valid.
+    if (ean === "") return;
+    if (/^0+$/.test(ean)) return;
+    if (ean.length === 13 && /^0{12}/.test(ean)) return;
 
     if (ean.length !== 13) {
       markCell(idx, "ean");
@@ -480,7 +526,7 @@ export function validate(rows, params) {
 
   if (zeroPriceRows.length) {
     warnings.push(
-      `${zeroPriceRows.length} row(s) have price = 0 (rows: ${zeroPriceRows.join(", ")}). Check if a price column is missing.`
+      `${zeroPriceRows.length} row(s) have price = 0 (rows: ${fmtRows(zeroPriceRows)}). Check if a price column is missing.`
     );
   }
 
@@ -500,23 +546,16 @@ export function validate(rows, params) {
     if (r.__scaledPriceWasBlank) scaledBlankRows.push(excelRow(idx));
   });
 
-  // Format a row list with a trailing "...and N more" if it's huge, so the
-  // warning bubble doesn't blow up on files with hundreds of fallback rows.
-  function formatRowList(rs, max = 20) {
-    if (rs.length <= max) return rs.join(", ");
-    return rs.slice(0, max).join(", ") + `, …and ${rs.length - max} more`;
-  }
-
   if (scaledZeroRows.length) {
     warnings.push(
       `${scaledZeroRows.length} row(s) have Scaled price = 0. ` +
-      `Kept the price as 0 and closed lead time to 0 (rows: ${formatRowList(scaledZeroRows)}).`
+      `Kept the price as 0 and closed lead time to 0 (rows: ${fmtRows(scaledZeroRows)}).`
     );
   }
   if (scaledBlankRows.length) {
     warnings.push(
       `${scaledBlankRows.length} row(s) have Scaled price blank. ` +
-      `Used Price per order unit instead and closed lead time to 0 (rows: ${formatRowList(scaledBlankRows)}).`
+      `Used Price per order unit instead and closed lead time to 0 (rows: ${fmtRows(scaledBlankRows)}).`
     );
   }
 
