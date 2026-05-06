@@ -526,16 +526,17 @@ export function validate(rows, params) {
 
   // ========== Scaled-price fallback warnings ==========
   //
-  // The parser handles two scenarios silently:
-  //   - Scaled price = 0      → keep the 0 as price, lead time = 0
-  //   - Scaled price = blank  → fall back to Price per order unit, lead time = 0
+  // The parser handles three scenarios silently:
+  //   - Scaled price = 0                        → keep 0 as price, lead time = 0
+  //   - Scaled price = blank, column O has value → use column O, lead time = 0
+  //   - Scaled price = blank, column O = blank  → price = 0, lead time = 0
   //
-  // Both behaviors are correct, but invisible to the user. Surface them as
-  // warnings so the user can confirm they're intentional. Rows mentioned here
-  // are EXCLUDED from the generic "price = 0" warning below — that warning is
-  // only useful when nothing else explains the zero price.
+  // All three are correct behaviors but invisible to the user. Surface them
+  // as warnings so the user can confirm intent. Rows mentioned here are
+  // EXCLUDED from the generic "price = 0" warning below to avoid duplication.
   const scaledZeroRows = [];
   const scaledBlankRows = [];
+  const priceBothBlankRows = [];
   const scaledExplainedSet = new Set();   // row numbers covered by a scaled warning
   rows.forEach((r, idx) => {
     if (r.__scaledPriceWasZero) {
@@ -544,6 +545,10 @@ export function validate(rows, params) {
     }
     if (r.__scaledPriceWasBlank) {
       scaledBlankRows.push(excelRow(idx));
+      scaledExplainedSet.add(excelRow(idx));
+    }
+    if (r.__priceBothBlank) {
+      priceBothBlankRows.push(excelRow(idx));
       scaledExplainedSet.add(excelRow(idx));
     }
   });
@@ -595,6 +600,12 @@ export function validate(rows, params) {
     warnings.push(
       `${scaledBlankRows.length} row(s) have Scaled price blank. ` +
       `Used Price per order unit instead and lead time = 0 (rows: ${fmtRows(scaledBlankRows)}).`
+    );
+  }
+  if (priceBothBlankRows.length) {
+    warnings.push(
+      `${priceBothBlankRows.length} row(s) have BOTH Scaled price and Price per order unit blank. ` +
+      `Filled price = 0 and lead time = 0 (rows: ${fmtRows(priceBothBlankRows)}).`
     );
   }
 
