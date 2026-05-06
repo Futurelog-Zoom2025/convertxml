@@ -321,6 +321,32 @@ export function initR1145Tab() {
     });
   });
 
+  // Re-run param-level validation whenever a Step-3 input changes. Without
+  // this, a parameter-level error (B.E. year, missing company, wrong supplier
+  // no. length) leaves the Generate button disabled even after the user fixes
+  // the field. Skipped when no file is loaded yet.
+  let revalidateTimer = null;
+  function revalidateParams() {
+    if (state.rows.length === 0) return;
+    const companies = companyPicker.getSelected();
+    const validationParams = getParams(companies[0] || "000");
+    const { errors } = validate(state.rows, validationParams);
+    if (errors.length) {
+      setGenerateReady("error", errors.length);
+    } else {
+      setGenerateReady("ready");
+    }
+  }
+  function scheduleRevalidate() {
+    clearTimeout(revalidateTimer);
+    // Small debounce so typing "06052026" doesn't fire validation 8 times.
+    revalidateTimer = setTimeout(revalidateParams, 250);
+  }
+  els.supplierNo.addEventListener("input", scheduleRevalidate);
+  els.validityDate.addEventListener("input", scheduleRevalidate);
+  els.language.addEventListener("change", scheduleRevalidate);
+  companyPicker.onChange(scheduleRevalidate);
+
   restrictToDigits(els.supplierNo);
   restrictToDigits(els.validityDate);
   els.validityDate.placeholder = todayDDMMYYYY();
