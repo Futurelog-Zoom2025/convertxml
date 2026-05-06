@@ -107,6 +107,12 @@ export function buildCompanyMultiselect({ rootId, btnId, labelId, menuId, option
 
   const selected = new Set();
 
+  // Listeners registered via the returned `onChange()` API. Fired any time
+  // the selection set changes (per-checkbox click, Select All, Clear All,
+  // and reset()).
+  const changeListeners = [];
+  function fireChange() { for (const fn of changeListeners) fn(); }
+
   options.innerHTML = COMPANY_IDS.map((id) => `
     <label class="multiselect-option">
       <input type="checkbox" value="${id}" />
@@ -136,6 +142,7 @@ export function buildCompanyMultiselect({ rootId, btnId, labelId, menuId, option
       if (cb.checked) selected.add(cb.value);
       else selected.delete(cb.value);
       updateLabel();
+      fireChange();
     });
   });
 
@@ -156,12 +163,14 @@ export function buildCompanyMultiselect({ rootId, btnId, labelId, menuId, option
       selected.add(cb.value);
     });
     updateLabel();
+    fireChange();
   });
 
   clear.addEventListener("click", () => {
     options.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = false; });
     selected.clear();
     updateLabel();
+    fireChange();
   });
 
   updateLabel();
@@ -172,7 +181,9 @@ export function buildCompanyMultiselect({ rootId, btnId, labelId, menuId, option
       options.querySelectorAll('input[type="checkbox"]').forEach((cb) => { cb.checked = false; });
       selected.clear();
       updateLabel();
+      fireChange();
     },
+    onChange: (fn) => { if (typeof fn === "function") changeListeners.push(fn); },
   };
 }
 
