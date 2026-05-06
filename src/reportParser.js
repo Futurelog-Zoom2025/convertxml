@@ -289,7 +289,16 @@ export function parseReport1145(aoa) {
     const itemNoStr = String(itemNoRaw).trim();
     if (itemNoStr === "" || itemNoRaw === NA_MARKER) break;
 
-    // Price logic (ported from VBA)
+    // Price logic
+    //
+    // Three cases for the source-file Scaled price column:
+    //   1. > 0 (a real scaled price)  → use it, lead time = the source lead time
+    //   2. = 0 (explicit zero)        → keep 0 as the price, close lead time to 0
+    //   3. blank / missing            → fall back to Price per order unit, close lead time to 0
+    //
+    // Cases 2 and 3 differ in WHERE the price comes from but agree on closing
+    // the lead time. The validator surfaces a warning for each so the user
+    // can verify it was intentional.
     const priceOU = toNumericOrEmpty(src[resolved.priceUnit]);
     const scaled = toNumericOrEmpty(src[resolved.scaledPrice]);
     const leadTime = getCell(src, resolved, "leadTime");
@@ -299,13 +308,25 @@ export function parseReport1145(aoa) {
 
     let finalPrice;
     let usedScaled = false;
-    if (scaledRounded === "" || scaledRounded === 0) {
+    let scaledPriceWasZero = false;
+    let scaledPriceWasBlank = false;
+    if (scaledRounded === 0) {
+      // Case 2: explicit 0 — keep the 0 as the final price (do NOT fall back).
+      finalPrice = 0;
+      scaledPriceWasZero = true;
+    } else if (scaledRounded === "") {
+      // Case 3: blank — fall back to Price per order unit.
       finalPrice = priceOU === "" ? 0 : priceOU;
+      scaledPriceWasBlank = true;
     } else {
+      // Case 1: real scaled price.
       finalPrice = scaledRounded;
       usedScaled = true;
     }
 
+    // Lead time follows the scaled-price branch: only when a REAL scaled
+    // price was used (case 1) does it carry through; both fallback cases
+    // close it to "0".
     const availability = usedScaled ? leadTime : "0";
 
     const row = {
@@ -328,6 +349,10 @@ export function parseReport1145(aoa) {
       customsNo: getCell(src, resolved, "customsNo"),
       availability: availability,      // computed value written to XML <VLZ>
       leadTimeRaw: leadTime,           // raw value from source file, used only for validation
+      // Internal flags consumed by validator.js for warning emission. Prefixed
+      // with `__` to signal they're internal-only and shouldn't reach XML.
+      __scaledPriceWasZero: scaledPriceWasZero,
+      __scaledPriceWasBlank: scaledPriceWasBlank,
       specUrl: getCell(src, resolved, "specUrl"),
       offerStart: getCell(src, resolved, "offerStart"),
       offerEnd: getCell(src, resolved, "offerEnd"),
