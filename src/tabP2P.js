@@ -13,6 +13,7 @@ import { P2P_HEADERS, P2P_FIELD_KEYS, headerDisplayList } from "./p2pHeaders.js"
 import {
   $, escapeHtml, formatBytes, todayDDMMYYYY, delay,
   runWithLoading, downloadBlob, buildCompanyMultiselect, restrictToDigits,
+  summarizeErrorForHint,
 } from "./shared.js";
 import { openFullDataModal } from "./fullDataModal.js";
 
@@ -92,10 +93,16 @@ export function initP2PTab() {
       els.genHint.className = "gen-hint";
     } else if (kind === "error") {
       els.generateBtn.disabled = true;
-      const n = typeof detail === "number" ? detail : 0;
-      els.genHint.textContent = n > 0
-        ? `⚠ Fix the ${n} validation issue${n === 1 ? "" : "s"} above before generating.`
-        : "⚠ Fix the validation issues above before generating.";
+      // detail can be a number (count of errors) or a string (specific reason).
+      // String is used by the param-revalidate path so the user sees WHY without scrolling.
+      if (typeof detail === "string" && detail.trim() !== "") {
+        els.genHint.textContent = `⚠ ${detail}`;
+      } else {
+        const n = typeof detail === "number" ? detail : 0;
+        els.genHint.textContent = n > 0
+          ? `⚠ Fix the ${n} validation issue${n === 1 ? "" : "s"} above before generating.`
+          : "⚠ Fix the validation issues above before generating.";
+      }
       els.genHint.className = "gen-hint warn";
     } else if (kind === "ready") {
       els.generateBtn.disabled = false;
@@ -608,7 +615,9 @@ export function initP2PTab() {
     const validationParams = getParams(companies[0] || "000");
     const { errors } = validate(state.mergedRows, validationParams);
     if (errors.length) {
-      setGenerateReady("error", errors.length);
+      // Show the actual reason inline so the user doesn't have to scroll up.
+      const hint = summarizeErrorForHint(errors);
+      setGenerateReady("error", hint || errors.length);
     } else {
       // Param errors are now clear; restore the previous "ready" gating.
       // We don't re-render the full status panel here — the user already saw
