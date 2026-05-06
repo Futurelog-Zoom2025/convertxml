@@ -154,14 +154,12 @@ export function validate(rows, params) {
   // different Customer IDs — but the display is regrouped by Item only so the
   // error bubble shows one line per Article no. with every affected row.
   const tripletSeen = new Map();
-  const eanFirstSeen = new Map();
   const itemEanFirstSeen = new Map();
   const itemNoFirstSeen = new Map();
   const itemCustSeen = new Map();
 
   const itemCustDupRows = new Map();      // itemNo -> [rowNums] (duplicates only)
   const tripletDupByItem = new Map();     // itemNo -> [rowNums] (duplicates only)
-  const eanConflictGroups = new Map();    // ean -> { firstRow, conflictRows[] }
   const itemEanConflictGroups = new Map();// itemNo -> { firstRow, conflictRows[] }
   const itemNoRepeatNoCust = new Map();   // itemNo -> [rowNums]
 
@@ -210,22 +208,14 @@ export function validate(rows, params) {
         tripletSeen.set(key, idx);
       }
 
-      // EAN conflict — same EAN used with a different item
-      if (eanFirstSeen.has(ean)) {
-        const first = eanFirstSeen.get(ean);
-        if (first.itemNo !== itemNo) {
-          markCell(idx, "ean");
-          if (!eanConflictGroups.has(ean)) {
-            eanConflictGroups.set(ean, {
-              firstRow: excelRow(first.firstIdx),
-              conflictRows: [],
-            });
-          }
-          eanConflictGroups.get(ean).conflictRows.push(excelRow(idx));
-        }
-      } else {
-        eanFirstSeen.set(ean, { itemNo, firstIdx: idx });
-      }
+      // NOTE: Previously this block flagged "same GTIN used with a different
+      // Article no." as a blocking error. The business confirmed that GTINs
+      // can legitimately be shared across different Article nos. (e.g. the
+      // same product sold under multiple article codes), so that rule was
+      // removed. The mirror check below — "same Article no. used with a
+      // different GTIN" — is preserved because Article nos. shouldn't
+      // duplicate in the first place per the existing duplicate-Article
+      // rule, but kept here as a defensive belt-and-braces guard.
 
       // Item/EAN mismatch — same item used with a different EAN
       if (itemEanFirstSeen.has(itemNo)) {
@@ -275,15 +265,6 @@ export function validate(rows, params) {
     errors.push(formatGrouped(total, "duplicate Article no. + EAN", groups));
   }
 
-  if (eanConflictGroups.size > 0) {
-    const total = Array.from(eanConflictGroups.values()).reduce((s, g) => s + g.conflictRows.length, 0);
-    const groups = Array.from(eanConflictGroups.entries()).map(([ean, g]) => ({
-      key: `EAN ${ean}`,
-      rows: g.conflictRows,
-    }));
-    errors.push(formatGrouped(total, "EAN used with different Article no.", groups));
-  }
-
   if (itemEanConflictGroups.size > 0) {
     const total = Array.from(itemEanConflictGroups.values()).reduce((s, g) => s + g.conflictRows.length, 0);
     const groups = Array.from(itemEanConflictGroups.entries()).map(([itemNo, g]) => ({
@@ -291,6 +272,142 @@ export function validate(rows, params) {
       rows: g.conflictRows,
     }));
     errors.push(formatGrouped(total, "Article no. used with different EANs", groups));
+  }
+
+  // ========== GTIN / EAN format validation ==========
+  //
+  // Once a GTIN is present (i.e. not the placeholder "0000000000000" and not
+  // blank), it must be a valid EAN-13:
+  //   1. Exactly 13 characters
+  //   2. All digits, no letters or whitespace
+  //   3. The 13th digit must equal the check digit computed from digits 1-12
+  //
+  // We bucket the failures by error type so the user sees a single grouped
+  // message per failure mode (length, non-digit, check-digit) instead of one
+  // line per row. Each group lists which Excel rows are affected.
+
+  const gtinByLengthIssue = new Map();   // gtin string -> [rowNums]
+  const gtinByDigitsIssue = new Map();   // gtin string -> [rowNums]
+  const gtinByCheckIssue  = new Map();   // gtin string -> [rowNums]
+
+  // Compute the EAN-13 check digit from a 12-digit prefix.
+  // Standard formula: weight digits at odd positions (1,3,5,...) by 1, digits
+  // at even positions (2,4,6,...) by 3. Check digit = (10 - sum mod 10) mod 10.
+  function computeEan13CheckDigit(twelveDigits) {
+    let sum = 0;
+    for (let i = 0; i < 12; i++) {
+      const d = twelveDigits.charCodeAt(i) - 48;
+      sum += i % 2 === 0 ? d : d * 3;
+    }
+    return (10 - (sum % 10)) % 10;
+  }
+
+  rows.forEach((r, idx) => {
+    const ean = String(r.ean || "").trim();
+    // Skip blank or all-zero placeholders — these are "no GTIN" by convention.
+    if (ean === "" || /^0+$/.test(ean)) return;
+
+    if (ean.length !== 13) {
+      markCell(idx, "ean");
+      const key = `"${ean}" (${ean.length} chars)`;
+      if (!gtinByLengthIssue.has(key)) gtinByLengthIssue.set(key, []);
+      gtinByLengthIssue.get(key).push(excelRow(idx));
+      return;  // Stop further checks on this GTIN — wrong length is the root cause
+    }
+
+    if (!/^\d{13}$/.test(ean)) {
+      markCell(idx, "ean");
+      const key = `"${ean}"`;
+      if (!gtinByDigitsIssue.has(key)) gtinByDigitsIssue.set(key, []);
+      gtinByDigitsIssue.get(key).push(excelRow(idx));
+      return;
+    }
+
+    const expected = computeEan13CheckDigit(ean.slice(0, 12));
+    const actual = ean.charCodeAt(12) - 48;
+    if (expected !== actual) {
+      markCell(idx, "ean");
+      const key = `"${ean}" (expected check digit ${expected}, got ${actual})`;
+      if (!gtinByCheckIssue.has(key)) gtinByCheckIssue.set(key, []);
+      gtinByCheckIssue.get(key).push(excelRow(idx));
+    }
+  });
+
+  if (gtinByLengthIssue.size > 0) {
+    const total = Array.from(gtinByLengthIssue.values()).reduce((s, rs) => s + rs.length, 0);
+    const groups = Array.from(gtinByLengthIssue.entries()).map(([key, rs]) => ({ key, rows: rs }));
+    errors.push(formatGrouped(total, "GTIN must be exactly 13 digits", groups));
+  }
+  if (gtinByDigitsIssue.size > 0) {
+    const total = Array.from(gtinByDigitsIssue.values()).reduce((s, rs) => s + rs.length, 0);
+    const groups = Array.from(gtinByDigitsIssue.entries()).map(([key, rs]) => ({ key, rows: rs }));
+    errors.push(formatGrouped(total, "GTIN contains non-digit characters", groups));
+  }
+  if (gtinByCheckIssue.size > 0) {
+    const total = Array.from(gtinByCheckIssue.values()).reduce((s, rs) => s + rs.length, 0);
+    const groups = Array.from(gtinByCheckIssue.entries()).map(([key, rs]) => ({ key, rows: rs }));
+    errors.push(formatGrouped(total, "GTIN check digit is invalid (likely a typo)", groups));
+  }
+
+  // ========== Field-length limits ==========
+  //
+  // Hard caps imposed by FutureLog / MDM:
+  //   - Article no. → max 20 characters
+  //   - Each description field (DE/FR/IT/GB/local) → max 100 characters
+  //
+  // The description limit applies INDEPENDENTLY to each language column. A
+  // row could pass on descGB but fail on descExtra; we list each language
+  // separately so the user knows exactly which cell to trim.
+  const ARTICLE_NO_MAX = 20;
+  const DESCRIPTION_MAX = 100;
+  const DESC_FIELDS = [
+    { key: "descDE",    label: "German" },
+    { key: "descFR",    label: "French" },
+    { key: "descIT",    label: "Italian" },
+    { key: "descGB",    label: "English" },
+    { key: "descExtra", label: "Local" },
+  ];
+
+  // itemNo -> [rowNums] for the over-length article-no error
+  const articleNoTooLong = new Map();
+  // "{language}: {Article no.}" -> [rowNums] for the over-length description error
+  const descTooLong = new Map();
+
+  rows.forEach((r, idx) => {
+    const itemNo = String(r.itemNo || "").trim();
+
+    // Article no. length check
+    if (itemNo.length > ARTICLE_NO_MAX) {
+      markCell(idx, "itemNo");
+      const key = `Item "${itemNo}" (${itemNo.length} chars)`;
+      if (!articleNoTooLong.has(key)) articleNoTooLong.set(key, []);
+      articleNoTooLong.get(key).push(excelRow(idx));
+    }
+
+    // Description length checks — one per language
+    for (const f of DESC_FIELDS) {
+      const v = r[f.key];
+      // String#length counts UTF-16 code units, which is what FutureLog/MDM
+      // typically counts. Skip blank/NA (those are caught elsewhere).
+      if (typeof v !== "string" || v === NA_MARKER) continue;
+      if (v.length > DESCRIPTION_MAX) {
+        markCell(idx, f.key);
+        const key = `${f.label} description for Item "${itemNo || "(blank)"}" (${v.length} chars)`;
+        if (!descTooLong.has(key)) descTooLong.set(key, []);
+        descTooLong.get(key).push(excelRow(idx));
+      }
+    }
+  });
+
+  if (articleNoTooLong.size > 0) {
+    const total = Array.from(articleNoTooLong.values()).reduce((s, rs) => s + rs.length, 0);
+    const groups = Array.from(articleNoTooLong.entries()).map(([key, rs]) => ({ key, rows: rs }));
+    errors.push(formatGrouped(total, `Article no. exceeds ${ARTICLE_NO_MAX}-character limit`, groups));
+  }
+  if (descTooLong.size > 0) {
+    const total = Array.from(descTooLong.values()).reduce((s, rs) => s + rs.length, 0);
+    const groups = Array.from(descTooLong.entries()).map(([key, rs]) => ({ key, rows: rs }));
+    errors.push(formatGrouped(total, `Item name exceeds ${DESCRIPTION_MAX}-character limit`, groups));
   }
 
   // ========== Unit / Country lists ==========
@@ -364,6 +481,42 @@ export function validate(rows, params) {
   if (zeroPriceRows.length) {
     warnings.push(
       `${zeroPriceRows.length} row(s) have price = 0 (rows: ${zeroPriceRows.join(", ")}). Check if a price column is missing.`
+    );
+  }
+
+  // ========== Scaled-price fallback warnings ==========
+  //
+  // The parser handles two scenarios silently:
+  //   - Scaled price = 0      → fall back to Price per order unit, lead time = 0
+  //   - Scaled price = blank  → fall back to Price per order unit, lead time = 0
+  //
+  // Both behaviors are correct, but invisible to the user. Surface them as
+  // warnings so the user can confirm they're intentional. We list affected
+  // Excel rows up to a reasonable cap to keep the warning legible on big files.
+  const scaledZeroRows = [];
+  const scaledBlankRows = [];
+  rows.forEach((r, idx) => {
+    if (r.__scaledPriceWasZero)  scaledZeroRows.push(excelRow(idx));
+    if (r.__scaledPriceWasBlank) scaledBlankRows.push(excelRow(idx));
+  });
+
+  // Format a row list with a trailing "...and N more" if it's huge, so the
+  // warning bubble doesn't blow up on files with hundreds of fallback rows.
+  function formatRowList(rs, max = 20) {
+    if (rs.length <= max) return rs.join(", ");
+    return rs.slice(0, max).join(", ") + `, …and ${rs.length - max} more`;
+  }
+
+  if (scaledZeroRows.length) {
+    warnings.push(
+      `${scaledZeroRows.length} row(s) have Scaled price = 0. ` +
+      `Kept the price as 0 and closed lead time to 0 (rows: ${formatRowList(scaledZeroRows)}).`
+    );
+  }
+  if (scaledBlankRows.length) {
+    warnings.push(
+      `${scaledBlankRows.length} row(s) have Scaled price blank. ` +
+      `Used Price per order unit instead and closed lead time to 0 (rows: ${formatRowList(scaledBlankRows)}).`
     );
   }
 
