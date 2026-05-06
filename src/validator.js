@@ -342,16 +342,21 @@ export function validate(rows, params) {
 
   rows.forEach((r, idx) => {
     const ean = String(r.ean || "").trim();
-    // Skip placeholder GTINs — these are "no GTIN" by convention. Three cases:
-    //  - blank / empty cell
-    //  - all zeros ("0000000000000")
-    //  - 13 chars where the leading 12 are zeros ("0000000000001", "0000000000007", etc.)
-    // The third case catches sentinel values some hotels use as "we don't have a
-    // GTIN yet, here's a row counter." Real GTINs always have a non-zero GS1
-    // prefix in the first few digits, so an all-zero prefix can never be valid.
+    // Skip placeholder GTINs — these are "no GTIN" by convention. Cases:
+    //   - blank / empty cell
+    //   - all-zeros of any length ("0000000000000")
+    //   - 13 chars where the leading 12 are zeros ("0000000000001", "0000000000007")
+    //   - 13 identical digits ("1111111111111", "9999999999999")
+    //
+    // Real GTINs always start with a non-zero GS1 issuer prefix (country code)
+    // and never use the same digit thirteen times, so any of these patterns is
+    // unambiguously a hand-typed sentinel meaning "we don't have a real GTIN."
+    // Flagging them as "check digit invalid" is mathematically correct but
+    // misleading to the user, so we suppress those errors entirely here.
     if (ean === "") return;
     if (/^0+$/.test(ean)) return;
     if (ean.length === 13 && /^0{12}/.test(ean)) return;
+    if (ean.length === 13 && /^(\d)\1{12}$/.test(ean)) return;
 
     if (ean.length !== 13) {
       markCell(idx, "ean");
