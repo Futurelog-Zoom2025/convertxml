@@ -407,8 +407,10 @@ export function validate(rows, params) {
   //   - Each description field (DE/FR/IT/GB/local) → max 100 characters
   //
   // The description limit applies INDEPENDENTLY to each language column. A
-  // row could pass on descGB but fail on descExtra; we list each language
-  // separately so the user knows exactly which cell to trim.
+  // row could pass on descGB but fail on descExtra. We track each language
+  // separately so the user knows which column has the long text — but at the
+  // user's request, the offending Article no. itself is no longer printed
+  // (just the row numbers).
   const ARTICLE_NO_MAX = 20;
   const DESCRIPTION_MAX = 100;
   const DESC_FIELDS = [
@@ -419,46 +421,51 @@ export function validate(rows, params) {
     { key: "descExtra", label: "Local" },
   ];
 
-  // itemNo -> [rowNums] for the over-length article-no error
-  const articleNoTooLong = new Map();
-  // "{language}: {Article no.}" -> [rowNums] for the over-length description error
-  const descTooLong = new Map();
+  // Flat row lists — no per-Article grouping, since users prefer not to see
+  // the long item identifier echoed in the error message.
+  const articleNoTooLongRows = [];
+  // language label → flat row list (description errors still split by column)
+  const descTooLongByLang = new Map();
 
   rows.forEach((r, idx) => {
     const itemNo = String(r.itemNo || "").trim();
 
-    // Article no. length check
     if (itemNo.length > ARTICLE_NO_MAX) {
       markCell(idx, "itemNo");
-      const key = `Item "${itemNo}" (${itemNo.length} chars)`;
-      if (!articleNoTooLong.has(key)) articleNoTooLong.set(key, []);
-      articleNoTooLong.get(key).push(excelRow(idx));
+      articleNoTooLongRows.push(excelRow(idx));
     }
 
-    // Description length checks — one per language
     for (const f of DESC_FIELDS) {
       const v = r[f.key];
-      // String#length counts UTF-16 code units, which is what FutureLog/MDM
-      // typically counts. Skip blank/NA (those are caught elsewhere).
       if (typeof v !== "string" || v === NA_MARKER) continue;
       if (v.length > DESCRIPTION_MAX) {
         markCell(idx, f.key);
-        const key = `${f.label} description for Item "${itemNo || "(blank)"}" (${v.length} chars)`;
-        if (!descTooLong.has(key)) descTooLong.set(key, []);
-        descTooLong.get(key).push(excelRow(idx));
+        if (!descTooLongByLang.has(f.label)) descTooLongByLang.set(f.label, []);
+        descTooLongByLang.get(f.label).push(excelRow(idx));
       }
     }
   });
 
-  if (articleNoTooLong.size > 0) {
-    const total = Array.from(articleNoTooLong.values()).reduce((s, rs) => s + rs.length, 0);
-    const groups = Array.from(articleNoTooLong.entries()).map(([key, rs]) => ({ key, rows: rs }));
-    errors.push(formatGrouped(total, `Article no. exceeds ${ARTICLE_NO_MAX}-character limit`, groups));
+  if (articleNoTooLongRows.length > 0) {
+    errors.push(
+      `${articleNoTooLongRows.length} Article no. exceeds ${ARTICLE_NO_MAX}-character limit — rows ${fmtRows(articleNoTooLongRows)}`
+    );
   }
-  if (descTooLong.size > 0) {
-    const total = Array.from(descTooLong.values()).reduce((s, rs) => s + rs.length, 0);
-    const groups = Array.from(descTooLong.entries()).map(([key, rs]) => ({ key, rows: rs }));
-    errors.push(formatGrouped(total, `Item name exceeds ${DESCRIPTION_MAX}-character limit`, groups));
+  if (descTooLongByLang.size > 0) {
+    const total = Array.from(descTooLongByLang.values()).reduce((s, rs) => s + rs.length, 0);
+    if (descTooLongByLang.size === 1) {
+      // Single language → inline
+      const [lang, rs] = [...descTooLongByLang.entries()][0];
+      errors.push(
+        `${total} Item name (${lang}) exceeds ${DESCRIPTION_MAX}-character limit — rows ${fmtRows(rs)}`
+      );
+    } else {
+      // Multiple languages → one line per language
+      const body = Array.from(descTooLongByLang.entries())
+        .map(([lang, rs]) => `  ${lang} — rows ${fmtRows(rs)}`)
+        .join("\n");
+      errors.push(`${total} Item name exceeds ${DESCRIPTION_MAX}-character limit:\n${body}`);
+    }
   }
 
   // ========== Unit / Country lists ==========
@@ -501,6 +508,30 @@ export function validate(rows, params) {
     errors.push(formatGrouped(total, "invalid country code(s)", groups));
   }
 
+  // ========== Scaled-price fallback warnings ==========
+  //
+  // The parser handles two scenarios silently:
+  //   - Scaled price = 0      → keep the 0 as price, lead time = 0
+  //   - Scaled price = blank  → fall back to Price per order unit, lead time = 0
+  //
+  // Both behaviors are correct, but invisible to the user. Surface them as
+  // warnings so the user can confirm they're intentional. Rows mentioned here
+  // are EXCLUDED from the generic "price = 0" warning below — that warning is
+  // only useful when nothing else explains the zero price.
+  const scaledZeroRows = [];
+  const scaledBlankRows = [];
+  const scaledExplainedSet = new Set();   // row numbers covered by a scaled warning
+  rows.forEach((r, idx) => {
+    if (r.__scaledPriceWasZero) {
+      scaledZeroRows.push(excelRow(idx));
+      scaledExplainedSet.add(excelRow(idx));
+    }
+    if (r.__scaledPriceWasBlank) {
+      scaledBlankRows.push(excelRow(idx));
+      scaledExplainedSet.add(excelRow(idx));
+    }
+  });
+
   // ========== Price checks ==========
   const negativePricesByItem = new Map();
   const zeroPriceRows = [];
@@ -515,7 +546,10 @@ export function validate(rows, params) {
         }
         negativePricesByItem.get(key).rows.push(excelRow(idx));
       } else if (p === 0) {
-        zeroPriceRows.push(excelRow(idx));
+        // Skip rows where a scaled-price warning will already explain the 0.
+        if (!scaledExplainedSet.has(excelRow(idx))) {
+          zeroPriceRows.push(excelRow(idx));
+        }
       }
     }
   });
@@ -535,32 +569,16 @@ export function validate(rows, params) {
     );
   }
 
-  // ========== Scaled-price fallback warnings ==========
-  //
-  // The parser handles two scenarios silently:
-  //   - Scaled price = 0      → fall back to Price per order unit, lead time = 0
-  //   - Scaled price = blank  → fall back to Price per order unit, lead time = 0
-  //
-  // Both behaviors are correct, but invisible to the user. Surface them as
-  // warnings so the user can confirm they're intentional. We list affected
-  // Excel rows up to a reasonable cap to keep the warning legible on big files.
-  const scaledZeroRows = [];
-  const scaledBlankRows = [];
-  rows.forEach((r, idx) => {
-    if (r.__scaledPriceWasZero)  scaledZeroRows.push(excelRow(idx));
-    if (r.__scaledPriceWasBlank) scaledBlankRows.push(excelRow(idx));
-  });
-
   if (scaledZeroRows.length) {
     warnings.push(
       `${scaledZeroRows.length} row(s) have Scaled price = 0. ` +
-      `Kept the price as 0 and closed lead time to 0 (rows: ${fmtRows(scaledZeroRows)}).`
+      `Kept the price as 0 and lead time = 0 (rows: ${fmtRows(scaledZeroRows)}).`
     );
   }
   if (scaledBlankRows.length) {
     warnings.push(
       `${scaledBlankRows.length} row(s) have Scaled price blank. ` +
-      `Used Price per order unit instead and closed lead time to 0 (rows: ${fmtRows(scaledBlankRows)}).`
+      `Used Price per order unit instead and lead time = 0 (rows: ${fmtRows(scaledBlankRows)}).`
     );
   }
 
