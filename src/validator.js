@@ -115,6 +115,22 @@ export function validate(rows, params) {
   }
   if (!/^\d{8}$/.test(params.validityDate || "")) {
     errors.push("Validity Date must be 8 digits (DDMMYYYY).");
+  } else {
+    // Buddhist Era guard. Thai suppliers occasionally type the พ.ศ. year (e.g.
+    // 06052569 instead of 06052026, since 2026 + 543 = 2569). Catch any 4-digit
+    // year that's plausibly a B.E. year for the current era — between 2543
+    // (= 2000 C.E.) and ~2700 (= 2157 C.E., comfortably beyond any reasonable
+    // forward-dated XML). Real C.E. years won't be in this band for centuries.
+    const yyyy = Number(params.validityDate.slice(4, 8));
+    if (yyyy >= 2543 && yyyy <= 2700) {
+      const ce = yyyy - 543;
+      const dd = params.validityDate.slice(0, 2);
+      const mm = params.validityDate.slice(2, 4);
+      errors.push(
+        `Validity Date year ${yyyy} looks like Buddhist Era (พ.ศ.). ` +
+        `Please enter the Christian Era year — for ${dd}/${mm}/${yyyy} (พ.ศ.) use ${dd}${mm}${ce} (C.E.).`
+      );
+    }
   }
 
   // ========== Customer ID "0000" core-entry rule ==========
