@@ -4,9 +4,11 @@ export const $ = (sel) => document.querySelector(sel);
 
 // Exact list and order requested by the business.
 // Duplicates in the source list (230 appeared twice) are deduped here.
+// New IDs are appended at the end to avoid shifting existing positions in
+// case anyone has bookmarked the order.
 export const COMPANY_IDS = [
   "169", "215", "233", "247", "278", "257", "262", "230", "315",
-  "101", "265", "225", "296", "285",
+  "101", "265", "225", "296", "285", "192",
 ];
 
 export function escapeHtml(s) {
