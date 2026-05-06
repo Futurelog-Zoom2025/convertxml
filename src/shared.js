@@ -34,6 +34,47 @@ export function delay(ms) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+// Given a validation error list, return a short single-line hint suitable
+// for inline display next to the Generate button. Used by the param-level
+// revalidate path in both tabs so the user sees WHY Generate is disabled
+// without scrolling up to the validation panel.
+//
+// Strategy: prioritize parameter-shape errors (validity date, supplier no.,
+// company id, language) since those are exactly what the user is trying to
+// fix. If only row-level errors remain, fall back to a count.
+//
+// Returns null when there are no errors (caller should switch to "ready").
+export function summarizeErrorForHint(errors) {
+  if (!errors || errors.length === 0) return null;
+
+  // Patterns for param-level errors, ordered by user priority. Each entry has
+  // a `match` regex and a short `hint` (or a function that builds one from
+  // the matched error string).
+  const PARAM_PATTERNS = [
+    { match: /Buddhist Era|พ\.ศ/i,           hint: (e) => firstLine(e) },
+    { match: /Validity Date must be/i,       hint: () => "Validity Date must be 8 digits (DDMMYYYY)." },
+    { match: /Supplier Number must be/i,     hint: () => "Supplier Number must be 6 digits." },
+    { match: /Language must be/i,            hint: (e) => firstLine(e) },
+    { match: /WebShop Company ID|companyId/i, hint: () => "Company ID must be 3 digits." },
+  ];
+
+  for (const p of PARAM_PATTERNS) {
+    const hit = errors.find((e) => p.match.test(e));
+    if (hit) return p.hint(hit);
+  }
+
+  // No param-level error matched — fall back to a generic count so the user
+  // knows the issue is a row-level data problem (not Step 3).
+  const n = errors.length;
+  return `Fix the ${n} validation issue${n === 1 ? "" : "s"} above before generating.`;
+}
+
+function firstLine(s) {
+  const i = s.indexOf("\n");
+  return i === -1 ? s : s.slice(0, i);
+}
+
+
 // ---------- Loading overlay (single shared overlay in index.html) ----------
 const overlay = {
   el: () => document.getElementById("loadingOverlay"),
