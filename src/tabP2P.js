@@ -597,6 +597,34 @@ export function initP2PTab() {
     });
   });
 
+  // Re-run param-level validation whenever a Step-3 input changes. Without
+  // this, a parameter-level error (B.E. year, missing/short supplier no.,
+  // unselected company) leaves Generate disabled even after the user fixes
+  // the field. Skipped while no merged data exists yet.
+  let revalidateTimer = null;
+  function revalidateParams() {
+    if (!state.mergedRows.length) return;
+    const companies = companyPicker.getSelected();
+    const validationParams = getParams(companies[0] || "000");
+    const { errors } = validate(state.mergedRows, validationParams);
+    if (errors.length) {
+      setGenerateReady("error", errors.length);
+    } else {
+      // Param errors are now clear; restore the previous "ready" gating.
+      // We don't re-render the full status panel here — the user already saw
+      // the row-level result earlier from tryMerge(). Just unlock the button.
+      setGenerateReady("ready");
+    }
+  }
+  function scheduleRevalidate() {
+    clearTimeout(revalidateTimer);
+    revalidateTimer = setTimeout(revalidateParams, 250);
+  }
+  els.supplierNo.addEventListener("input", scheduleRevalidate);
+  els.validityDate.addEventListener("input", scheduleRevalidate);
+  els.language.addEventListener("change", scheduleRevalidate);
+  companyPicker.onChange(scheduleRevalidate);
+
   restrictToDigits(els.supplierNo);
   restrictToDigits(els.validityDate);
   els.validityDate.placeholder = todayDDMMYYYY();
