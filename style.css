@@ -933,6 +933,15 @@ code {
 .status-pill.pill-p2ponly { background: #e6e5f9; color: #453d8a; }
 .status-pill.pill-none    { color: var(--muted); background: transparent; }
 
+/* R1145-tab status pills — distinct color set so meaning is consistent
+   regardless of which tab the user is on. Multiple pills can render on the
+   same row separated by spaces. */
+.status-pill.status-pill-empty   { color: var(--muted); background: transparent; }
+.status-pill.status-pill-success { background: #e8f3ec; color: #2f7a4b; }
+.status-pill.status-pill-info    { background: #eaf2fb; color: #1c5ba3; }
+.status-pill.status-pill-warn    { background: #fdf3dc; color: #8a4f16; }
+.status-pill.status-pill-danger  { background: #fdecea; color: #96231c; }
+
 .preview-table td.price-updated { background: #eaf4ea; }
 .preview-table td.price-fallback { background: #fcdede; }
 
