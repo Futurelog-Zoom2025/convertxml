@@ -131,6 +131,29 @@ export function initR1145Tab() {
     { key: "customerId",   label: "Cust",    cls: "c-cust" },
   ];
 
+  // Status pill style mapping for the R1145 tab. Empty string = normal row,
+  // rendered as a muted dash. Each named status gets a CSS class that maps
+  // to a color in style.css.
+  const STATUS_PILL = {
+    "":                          { label: "—",                         cls: "status-pill-empty" },
+    "Price update":              { label: "Price update",              cls: "status-pill-success" },
+    "Scaled price = 0":          { label: "Scaled price = 0",          cls: "status-pill-info" },
+    "No price in scaled price":  { label: "No price in scaled price",  cls: "status-pill-warn" },
+    "Both prices blank":         { label: "Both prices blank",         cls: "status-pill-danger" },
+    "Lead time update":          { label: "Lead time update",          cls: "status-pill-warn" },
+  };
+
+  // Render a row's statuses as one or more pills. Used by the Full Data modal.
+  function renderStatusPills(r) {
+    const list = Array.isArray(r.statuses) && r.statuses.length > 0 ? r.statuses : [""];
+    return list
+      .map((s) => {
+        const info = STATUS_PILL[s] || { label: s, cls: "status-pill-empty" };
+        return `<span class="status-pill ${info.cls}">${escapeHtml(info.label)}</span>`;
+      })
+      .join(" ");
+  }
+
   const FULL_COLS = [
     { key: "pos",          label: "#" },
     { key: "itemNo",       label: "Article no." },
@@ -153,6 +176,12 @@ export function initR1145Tab() {
     { key: "offerStart",   label: "Offer Start" },
     { key: "offerEnd",     label: "Offer End" },
     { key: "customerId",   label: "Customer ID" },
+    {
+      key: "statuses",
+      label: "Status",
+      cellHtml: renderStatusPills,
+      cellClass: () => "status-cell",
+    },
   ];
 
   function displayValue(v) {
@@ -327,6 +356,7 @@ export function initR1145Tab() {
       rows: state.rows,
       columns: FULL_COLS,
       invalidCells: state.invalidCells,
+      statusPillMap: STATUS_PILL,
     });
   });
 
