@@ -340,6 +340,34 @@ export function parseReport1145(aoa) {
     // All other cases (2, 3, 4) close the lead time to "0".
     const availability = usedScaled ? leadTime : "0";
 
+    // ----- Status pills (consumed by the Full Data modal on the R1145 tab) -----
+    // Each row may carry zero, one, or two status labels — at most one
+    // price-related label plus the "Lead time update" label. The price label
+    // describes WHAT happened to the price; "Lead time update" announces that
+    // lead time was modified by the parser (forced to 0).
+    //
+    // Empty array = "Normal (no change)" — preserved as a separate filter
+    // option in the modal but never rendered as a visible pill.
+    const statuses = [];
+    if (usedScaled) {
+      statuses.push("Price update");
+    } else if (scaledPriceWasZero) {
+      statuses.push("Scaled price = 0");
+    } else if (scaledPriceWasBlank) {
+      statuses.push("No price in scaled price");
+    } else if (priceBothBlank) {
+      statuses.push("Both prices blank");
+    }
+    // "Lead time update" fires whenever the parser modified the lead time
+    // away from the source value. Practically that means availability ended
+    // up "0" while the source-file leadTime had something else. Note: this
+    // does NOT fire when the source already had "0" (no change happened).
+    const sourceLeadStr = String(leadTime || "").trim();
+    const leadWasModified = !usedScaled && sourceLeadStr !== "" && sourceLeadStr !== "0";
+    if (leadWasModified) {
+      statuses.push("Lead time update");
+    }
+
     const row = {
       pos: rows.length + 1,
       descDE: getCell(src, resolved, "descDE"),
@@ -365,6 +393,9 @@ export function parseReport1145(aoa) {
       __scaledPriceWasZero: scaledPriceWasZero,
       __scaledPriceWasBlank: scaledPriceWasBlank,
       __priceBothBlank: priceBothBlank,
+      // Status pill labels for the R1145 Full Data modal. Empty array = no
+      // pill rendered, treated as "Normal (no change)" by the filter.
+      statuses,
       specUrl: getCell(src, resolved, "specUrl"),
       offerStart: getCell(src, resolved, "offerStart"),
       offerEnd: getCell(src, resolved, "offerEnd"),
