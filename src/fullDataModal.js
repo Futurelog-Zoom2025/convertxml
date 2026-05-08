@@ -63,13 +63,25 @@ function compareValues(a, b) {
   return String(a).toLowerCase().localeCompare(String(b).toLowerCase());
 }
 
+function getRowStatuses(r) {
+  // Normalize a row's status info into an array. Supports two shapes:
+  //   - r.statuses: string[]   (R1145 tab — multi-pill rows)
+  //   - r.status:   string     (P2P tab    — single status)
+  // Returns ["" (empty)] for "Normal — no change" so the filter can match
+  // it like any other status.
+  if (Array.isArray(r.statuses) && r.statuses.length > 0) return r.statuses;
+  if (typeof r.status === "string" && r.status !== "") return [r.status];
+  return [""];
+}
+
 function render() {
   const q = view.filter.trim().toLowerCase();
   let entries = view.rows.map((r, idx) => ({ r, idx }));
 
-  // Status filter: only active when the dataset has a `status` field.
+  // Status filter: a row matches if any of its statuses (multi-pill) or its
+  // single status equals the filter value.
   if (view.statusFilter !== "__all__") {
-    entries = entries.filter((e) => (e.r.status || "") === view.statusFilter);
+    entries = entries.filter((e) => getRowStatuses(e.r).includes(view.statusFilter));
   }
 
   if (view.showOnlyErrors) {
@@ -144,18 +156,27 @@ function refreshErrorToggle() {
 }
 
 // Populate the status dropdown with only the statuses present in the current
-// dataset. If there are no status values at all, hide the dropdown entirely
-// (R1145 tab case — rows don't have a `status` field).
+// dataset. If no row has any status info at all, hide the dropdown entirely.
+//
+// Counts are by-pill, not by-row: a row carrying two pills (e.g. "Price
+// update" + "Lead time update" on the R1145 tab) contributes 1 to each pill
+// count. The "All statuses" total stays the row count.
 function refreshStatusFilter() {
   const counts = new Map();
+  let anyHasStatusField = false;
   for (const r of view.rows) {
-    if (r && typeof r.status !== "undefined") {
-      const k = r.status || "";
+    const hasArray  = Array.isArray(r.statuses);
+    const hasString = typeof r.status === "string";
+    if (!hasArray && !hasString) continue;
+    anyHasStatusField = true;
+
+    const list = getRowStatuses(r);  // returns [""] for normal rows
+    for (const k of list) {
       counts.set(k, (counts.get(k) || 0) + 1);
     }
   }
 
-  if (counts.size === 0) {
+  if (!anyHasStatusField) {
     els.statusFilter.classList.add("hidden");
     view.statusFilter = "__all__";
     return;
