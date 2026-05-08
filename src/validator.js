@@ -19,8 +19,8 @@ const KEY_LABELS = {
   cu: "Content unit (CU)",
   priceOU: "Price",
   origin: "Origin",
-  availability: "Availability",
-  leadTimeRaw: "Lead time",
+  availability: "Final lead (XML)",
+  leadTimeRaw: "Source lead",
   customerId: "Customer ID",
 };
 
