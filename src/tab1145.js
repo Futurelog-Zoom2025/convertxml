@@ -127,7 +127,7 @@ export function initR1145Tab() {
     { key: "cuou",         label: "CU/OU",   cls: "c-cuou" },
     { key: "priceOU",      label: "Price",   cls: "c-price" },
     { key: "origin",       label: "Orig",    cls: "c-origin" },
-    { key: "availability", label: "Avail",   cls: "c-avail" },
+    { key: "availability", label: "Final lead", cls: "c-avail" },
     { key: "customerId",   label: "Cust",    cls: "c-cust" },
   ];
 
@@ -170,8 +170,8 @@ export function initR1145Tab() {
     { key: "priceOU",      label: "Price" },
     { key: "origin",       label: "Origin" },
     { key: "customsNo",    label: "Customs No" },
-    { key: "leadTimeRaw",  label: "Lead Time" },
-    { key: "availability", label: "Availability" },
+    { key: "leadTimeRaw",  label: "Source lead" },
+    { key: "availability", label: "Final lead (XML)" },
     { key: "specUrl",      label: "Spec URL" },
     { key: "offerStart",   label: "Offer Start" },
     { key: "offerEnd",     label: "Offer End" },
