@@ -330,31 +330,20 @@ export function validate(rows, params) {
 
   // ========== GTIN / EAN format validation ==========
   //
-  // Once a GTIN is present (i.e. not the placeholder "0000000000000" and not
-  // blank), it must be a valid EAN-13:
+  // Once a GTIN is present (i.e. not a placeholder and not blank), it must be:
   //   1. Exactly 13 characters
   //   2. All digits, no letters or whitespace
-  //   3. The 13th digit must equal the check digit computed from digits 1-12
+  //
+  // The check-digit math step was removed at the business's request — it was
+  // rejecting some legitimate GTINs from older systems that don't conform to
+  // the EAN-13 modulo-10 formula. The two checks below are enough to reject
+  // obvious garbage (wrong length, letters mixed in) without false positives.
   //
   // We bucket the failures by error type so the user sees a single grouped
-  // message per failure mode (length, non-digit, check-digit) instead of one
-  // line per row. Each group lists which Excel rows are affected.
+  // message per failure mode instead of one line per row.
 
   const gtinByLengthIssue = new Map();   // gtin string -> [rowNums]
   const gtinByDigitsIssue = new Map();   // gtin string -> [rowNums]
-  const gtinByCheckIssue  = new Map();   // gtin string -> [rowNums]
-
-  // Compute the EAN-13 check digit from a 12-digit prefix.
-  // Standard formula: weight digits at odd positions (1,3,5,...) by 1, digits
-  // at even positions (2,4,6,...) by 3. Check digit = (10 - sum mod 10) mod 10.
-  function computeEan13CheckDigit(twelveDigits) {
-    let sum = 0;
-    for (let i = 0; i < 12; i++) {
-      const d = twelveDigits.charCodeAt(i) - 48;
-      sum += i % 2 === 0 ? d : d * 3;
-    }
-    return (10 - (sum % 10)) % 10;
-  }
 
   rows.forEach((r, idx) => {
     const ean = String(r.ean || "").trim();
@@ -367,8 +356,6 @@ export function validate(rows, params) {
     // Real GTINs always start with a non-zero GS1 issuer prefix (country code)
     // and never use the same digit thirteen times, so any of these patterns is
     // unambiguously a hand-typed sentinel meaning "we don't have a real GTIN."
-    // Flagging them as "check digit invalid" is mathematically correct but
-    // misleading to the user, so we suppress those errors entirely here.
     if (ean === "") return;
     if (/^0+$/.test(ean)) return;
     if (ean.length === 13 && /^0{12}/.test(ean)) return;
@@ -387,16 +374,6 @@ export function validate(rows, params) {
       const key = `"${ean}"`;
       if (!gtinByDigitsIssue.has(key)) gtinByDigitsIssue.set(key, []);
       gtinByDigitsIssue.get(key).push(excelRow(idx));
-      return;
-    }
-
-    const expected = computeEan13CheckDigit(ean.slice(0, 12));
-    const actual = ean.charCodeAt(12) - 48;
-    if (expected !== actual) {
-      markCell(idx, "ean");
-      const key = `"${ean}" (expected check digit ${expected}, got ${actual})`;
-      if (!gtinByCheckIssue.has(key)) gtinByCheckIssue.set(key, []);
-      gtinByCheckIssue.get(key).push(excelRow(idx));
     }
   });
 
@@ -409,11 +386,6 @@ export function validate(rows, params) {
     const total = Array.from(gtinByDigitsIssue.values()).reduce((s, rs) => s + rs.length, 0);
     const groups = Array.from(gtinByDigitsIssue.entries()).map(([key, rs]) => ({ key, rows: rs }));
     errors.push(formatGrouped(total, "GTIN contains non-digit characters", groups));
-  }
-  if (gtinByCheckIssue.size > 0) {
-    const total = Array.from(gtinByCheckIssue.values()).reduce((s, rs) => s + rs.length, 0);
-    const groups = Array.from(gtinByCheckIssue.entries()).map(([key, rs]) => ({ key, rows: rs }));
-    errors.push(formatGrouped(total, "GTIN check digit is invalid (likely a typo)", groups));
   }
 
   // ========== Field-length limits ==========
