@@ -1,6 +1,6 @@
 {
   "name": "report-1145-xml-converter",
-  "version": "1.0.2",
+  "version": "1.1.0",
   "description": "Convert Report 1145 Excel files into FUTURELOG XML format",
   "type": "module",
   "scripts": {
@@ -15,6 +15,7 @@
     "wrangler": "^4.0.0"
   },
   "dependencies": {
-    "xlsx": "^0.18.5"
+    "xlsx": "^0.18.5",
+    "xlsx-js-style": "^1.2.0"
   }
 }
