@@ -601,6 +601,8 @@ export function initP2PTab() {
       columns: FULL_COLS,
       invalidCells: state.invalidCells,
       statusPillMap: STATUS_PILL,
+      exportFilename: "P2P_Merge_Export",
+      exportSheetName: "P2P Merge",
     });
   });
 
