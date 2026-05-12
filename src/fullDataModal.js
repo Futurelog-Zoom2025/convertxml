@@ -8,6 +8,7 @@
 
 import { escapeHtml, runWithLoading } from "./shared.js";
 import { NA_MARKER } from "./reportParser.js";
+import { exportFullDataToExcel } from "./exportExcel.js";
 
 const els = {
   modal:              document.getElementById("fullDataModal"),
@@ -19,6 +20,7 @@ const els = {
   errorFilterCheckbox:document.getElementById("errorFilterCheckbox"),
   errorRowCount:      document.getElementById("errorRowCount"),
   statusFilter:       document.getElementById("fullDataStatusFilter"),
+  exportBtn:          document.getElementById("exportExcelBtn"),
 };
 
 // Per-open state — reset whenever a new dataset is shown
@@ -31,7 +33,10 @@ let view = {
   showOnlyErrors: false,
   filter: "",
   statusFilter: "__all__",
-  statusPillMap: {},   // forwarded by the caller; maps status value → {label, cls}
+  statusPillMap: {},        // forwarded by the caller; maps status value → {label, cls}
+  exportFilename: "Export", // base filename for Export to Excel (set per tab)
+  exportSheetName: "Data",  // worksheet name inside the .xlsx
+  visibleRows: [],          // row objects in the currently-rendered (filtered) order
 };
 
 function displayValue(v) {
@@ -99,6 +104,11 @@ function render() {
     const mul = view.sortDir === "asc" ? 1 : -1;
     entries.sort((a, b) => mul * compareValues(a.r[key], b.r[key]));
   }
+
+  // Snapshot the rows in their currently-rendered order — the Export button
+  // sends exactly this list to the .xlsx writer so the file matches what's
+  // on screen (Errors-only / status / search / sort all respected).
+  view.visibleRows = entries.map((e) => e.r);
 
   const head = `<thead><tr>${view.columns.map((c) => {
     const isSorted = view.sortCol === c.key;
@@ -213,7 +223,11 @@ function refreshStatusFilter() {
   els.statusFilter.value = view.statusFilter;
 }
 
-export function openFullDataModal({ rows, columns, invalidCells = new Map(), loadingHint = "", statusPillMap = {} }) {
+export function openFullDataModal({
+  rows, columns, invalidCells = new Map(),
+  loadingHint = "", statusPillMap = {},
+  exportFilename = "Export", exportSheetName = "Data",
+}) {
   view = {
     rows,
     columns,
@@ -224,6 +238,9 @@ export function openFullDataModal({ rows, columns, invalidCells = new Map(), loa
     filter: "",
     statusFilter: "__all__",
     statusPillMap,
+    exportFilename,
+    exportSheetName,
+    visibleRows: rows.slice(),
   };
   els.errorFilterCheckbox.checked = false;
   els.search.value = "";
@@ -269,6 +286,25 @@ els.errorFilterCheckbox.addEventListener("change", (e) => {
 els.statusFilter.addEventListener("change", (e) => {
   view.statusFilter = e.target.value;
   render();
+});
+
+// Export to Excel button — exports the rows that are currently visible (after
+// errors-only / status / search / sort filters), preserving red fill on
+// blocking-error cells and yellow fill on parser-modification (warning) cells.
+els.exportBtn.addEventListener("click", () => {
+  try {
+    exportFullDataToExcel({
+      rows:         view.visibleRows,
+      allRows:      view.rows,
+      columns:      view.columns,
+      invalidCells: view.invalidCells,
+      filename:     view.exportFilename,
+      sheetName:    view.exportSheetName,
+    });
+  } catch (err) {
+    console.error("Excel export failed:", err);
+    alert("Could not export to Excel: " + (err && err.message ? err.message : err));
+  }
 });
 let filterTimer = null;
 els.search.addEventListener("input", (e) => {
