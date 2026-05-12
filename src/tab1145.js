@@ -1,15 +1,12 @@
-// Tab 2: P2P → XML converter.
-// Uploads a P2P file (supplier list from the hotel) plus the matching Report
-// 1145 file, merges them based on Article No., then runs validation and XML
-// generation on the merged rows — same XML pipeline as tab 1.
+// Tab 1: Report 1145 → XML converter.
+// Ported from the monolithic main.js. Exposes initR1145Tab() which wires up
+// all event listeners for the DOM ids inside #panel1145.
 
 import * as XLSX from "xlsx";
 import { parseReport1145, NA_MARKER } from "./reportParser.js";
 import { validate } from "./validator.js";
 import { generateXml } from "./xmlGenerator.js";
-import { parseP2PFile, parseFirstParseableSheet } from "./p2pParser.js";
-import { mergeP2PAndReport1145 } from "./p2pMerger.js";
-import { P2P_HEADERS, P2P_FIELD_KEYS, headerDisplayList } from "./p2pHeaders.js";
+import { downloadTemplate } from "./templateGenerator.js";
 import {
   $, escapeHtml, formatBytes, todayDDMMYYYY, delay,
   runWithLoading, downloadBlob, buildCompanyMultiselect, restrictToDigits,
@@ -17,84 +14,63 @@ import {
 } from "./shared.js";
 import { openFullDataModal } from "./fullDataModal.js";
 
-export function initP2PTab() {
+export function initR1145Tab() {
   const els = {
-    // Upload P2P
-    resetBtn:      $("#p2pResetBtn"),
-    dropZone:      $("#p2pDropZone"),
-    fileInput:     $("#p2pFileInput"),
-    fileInfo:      $("#p2pFileInfo"),
-    supplierBanner:$("#p2pSupplierBanner"),
-    supplierIcon:  $("#p2pSupplierIcon"),
-    supplierName:  $("#p2pSupplierName"),
-    supplierMeta:  $("#p2pSupplierMeta"),
-    langPick:      $("#p2pLangPick"),
-    showHeadersBtn:$("#p2pShowHeadersBtn"),
-    hdrModal:      $("#p2pHdrModal"),
-    hdrBox:        $("#p2pHdrBox"),
-    hdrClose:      $("#p2pHdrClose"),
-    hdrCopyBtn:    $("#p2pHdrCopyBtn"),
-    // Upload R1145
-    r1145Drop:     $("#p2pR1145DropZone"),
-    r1145FileInput:$("#p2pR1145FileInput"),
-    r1145FileInfo: $("#p2pR1145FileInfo"),
-    // Options
-    newPriceCheckbox: $("#p2pNewPriceCheckbox"),
-    openLeadCheckbox: $("#p2pOpenLeadCheckbox"),
-    newPriceWarning:  $("#p2pNewPriceWarning"),
-    mergeStatus:      $("#p2pMergeStatus"),
-    // Preview
-    previewCard:    $("#p2pPreviewCard"),
-    previewSummary: $("#p2pPreviewSummary"),
-    previewTable:   $("#p2pPreviewTable"),
-    showFullBtn:    $("#p2pShowFullBtn"),
-    // Params
-    supplierNo:   $("#p2pSupplierNo"),
-    language:     $("#p2pLanguage"),
-    validityDate: $("#p2pValidityDate"),
-    generateBtn:  $("#p2pGenerateBtn"),
-    genHint:      $("#p2pGenHint"),
+    dropZone: $("#dropZone"),
+    fileInput: $("#fileInput"),
+    fileInfo: $("#fileInfo"),
+    supplierNo: $("#supplierNo"),
+    language: $("#language"),
+    validityDate: $("#validityDate"),
+    generateBtn: $("#generateBtn"),
+    resetBtn: $("#resetBtn"),
+    templateBtn: $("#templateBtn"),
+    genHint: $("#genHint"),
+    status: $("#status"),
+    previewCard: $("#previewCard"),
+    previewSummary: $("#previewSummary"),
+    previewTable: $("#previewTable"),
+    showFullBtn: $("#showFullBtn"),
   };
 
   const companyPicker = buildCompanyMultiselect({
-    rootId: "p2pCompanyMultiselect",
-    btnId: "p2pCompanyBtn",
-    labelId: "p2pCompanyBtnLabel",
-    menuId: "p2pCompanyMenu",
-    optionsId: "p2pCompanyOptions",
-    selectAllId: "p2pSelectAllCompanies",
-    clearAllId: "p2pClearAllCompanies",
+    rootId: "companyMultiselect",
+    btnId: "companyBtn",
+    labelId: "companyBtnLabel",
+    menuId: "companyMenu",
+    optionsId: "companyOptions",
+    selectAllId: "selectAllCompanies",
+    clearAllId: "clearAllCompanies",
   });
 
   const state = {
-    lang: "EN",
-    p2pParsed: null,   // {supplier, division, rows}
-    r1145Rows: null,   // rows[]
-    mergedRows: [],
+    rows: [],
+    fileName: null,
     invalidCells: new Map(),
-    summary: null,
   };
 
-  // ---------- Status + generate gating ----------
+  // ---------- Status + generate-button gating ----------
   function setStatus(kind, html) {
-    els.mergeStatus.className = `status ${kind}`;
-    els.mergeStatus.innerHTML = html;
-    els.mergeStatus.classList.remove("hidden");
+    els.status.className = `status ${kind}`;
+    els.status.innerHTML = html;
+    els.status.classList.remove("hidden");
   }
   function clearStatus() {
-    els.mergeStatus.className = "status hidden";
-    els.mergeStatus.innerHTML = "";
+    els.status.className = "status hidden";
+    els.status.innerHTML = "";
   }
 
   function setGenerateReady(kind, detail) {
     if (kind === "empty") {
       els.generateBtn.disabled = true;
-      els.genHint.textContent = detail || "Upload both files first.";
+      els.genHint.textContent = "Upload a file first.";
       els.genHint.className = "gen-hint";
     } else if (kind === "error") {
       els.generateBtn.disabled = true;
-      // detail can be a number (count of errors) or a string (specific reason).
-      // String is used by the param-revalidate path so the user sees WHY without scrolling.
+      // detail can be:
+      //   - number: count of row-level errors → show "Fix the N issues..."
+      //   - string: a specific reason → show it inline (used by the param
+      //     revalidate path so users see WHY without scrolling)
       if (typeof detail === "string" && detail.trim() !== "") {
         els.genHint.textContent = `⚠ ${detail}`;
       } else {
@@ -112,357 +88,120 @@ export function initP2PTab() {
   }
 
   function resetAll() {
-    state.p2pParsed = null;
-    state.r1145Rows = null;
-    state.mergedRows = [];
+    state.rows = [];
+    state.fileName = null;
     state.invalidCells = new Map();
-    state.summary = null;
     els.fileInput.value = "";
-    els.r1145FileInput.value = "";
     els.fileInfo.classList.add("hidden");
     els.fileInfo.innerHTML = "";
-    els.r1145FileInfo.classList.add("hidden");
-    els.r1145FileInfo.innerHTML = "";
-    els.supplierBanner.classList.add("hidden");
     els.previewCard.classList.add("hidden");
-    els.hdrModal.classList.add("hidden");
     companyPicker.reset();
     // Step 3 — XML Parameters & Generate fields. Clear user inputs back to
     // their initial state so the form is fully blank after a reset.
     els.supplierNo.value = "";
     els.validityDate.value = "";
     els.language.value = "TH"; // default matches the HTML's `<option selected>` default
-    clearStatus();
-    updateNewPriceWarning();
     setGenerateReady("empty");
-  }
-
-  // Shows/hides the "file has NEW PRICE column but toggle is OFF" warning.
-  // Called after any parse, after toggle changes, and on reset. The condition
-  // is purely derived from current state so this is always safe to invoke.
-  function updateNewPriceWarning() {
-    const toggleOff = !els.newPriceCheckbox.checked;
-    const fileHasIt = !!state.p2pParsed?.hasNewPriceColumn;
-    if (toggleOff && fileHasIt) {
-      els.newPriceWarning.classList.remove("hidden");
-    } else {
-      els.newPriceWarning.classList.add("hidden");
-    }
-  }
-
-  // ---------- Language picker + header modal ----------
-  function renderHeaderBox() {
-    const useNewPriceCol = !!els.newPriceCheckbox.checked;
-    const list = headerDisplayList(state.lang, useNewPriceCol);
-    // Tab-separated line, with required fields wrapped in <span class="req">
-    els.hdrBox.innerHTML = list
-      .map((h) => (h.required ? `<span class="req">${escapeHtml(h.label)}</span>` : escapeHtml(h.label)))
-      .join("\t");
-  }
-
-  // ---------- Supplier banner ----------
-  function initialsFromName(name) {
-    if (!name) return "—";
-    const words = name.trim().split(/\s+/).slice(0, 2);
-    return words.map((w) => w[0] || "").join("").toUpperCase() || "—";
-  }
-
-  function showSupplierBanner(supplier, division) {
-    // Hide the banner entirely when nothing was detected in the header rows.
-    // Hotels sometimes ship files with missing or messed-up supplier lines —
-    // that's OK, parsing still works, user just fills in the number manually.
-    if (!supplier && !division) {
-      els.supplierBanner.classList.add("hidden");
-      return;
-    }
-
-    // Prefer supplier as the "primary" name displayed. If only division was
-    // detected, surface that instead of a blank banner so the user still gets
-    // some context about which hotel/supplier this file relates to.
-    if (supplier && supplier.name) {
-      els.supplierName.textContent = supplier.name;
-      els.supplierIcon.textContent = initialsFromName(supplier.name);
-    } else if (division && division.name) {
-      els.supplierName.textContent = "(supplier name not detected)";
-      els.supplierIcon.textContent = initialsFromName(division.name);
-    } else {
-      els.supplierName.textContent = "(partial info detected)";
-      els.supplierIcon.textContent = "?";
-    }
-
-    const bits = [];
-    if (supplier?.num) bits.push(`Supplier no. ${supplier.num}`);
-    if (division) {
-      const divLabel =
-        division.num && division.name ? `${division.name} (Division ${division.num})` :
-        division.name ? division.name :
-        division.num ? `Division ${division.num}` : "";
-      if (divLabel) bits.push(divLabel);
-    }
-    if (!bits.length) bits.push("Enter the supplier number manually below.");
-    els.supplierMeta.textContent = bits.join(" · ");
-
-    els.supplierBanner.classList.remove("hidden");
-
-    // Auto-fill the supplier number param only when we have a clean 6-digit number.
-    if (supplier?.num && !els.supplierNo.value && /^\d{6}$/.test(supplier.num)) {
-      els.supplierNo.value = supplier.num;
-    }
-  }
-
-  // ---------- File handling ----------
-  async function handleP2PFile(file) {
     clearStatus();
-    try {
-      const data = await file.arrayBuffer();
-      const parsed = await runWithLoading(
-        "Parsing P2P file…",
-        "Detecting supplier and headers.",
-        () => {
-          const wb = XLSX.read(data, { type: "array", cellDates: true });
-          // Try each sheet in order — some workbooks have empty or unrelated
-          // leftover sheets before the real P2P data. parseFirstParseableSheet
-          // picks the first one that parses cleanly.
-          const sheets = wb.SheetNames.map((name) => ({
-            name,
-            aoa: XLSX.utils.sheet_to_json(wb.Sheets[name], { header: 1, defval: "", raw: true }),
-          }));
-          return parseFirstParseableSheet(sheets, {
-            useNewPriceCol: !!els.newPriceCheckbox.checked,
-          });
-        }
-      );
-
-      if (parsed.rows.length === 0) throw new Error("No data rows found in the P2P file.");
-      state.p2pParsed = parsed;
-
-      updateNewPriceWarning();
-      showSupplierBanner(parsed.supplier, parsed.division);
-
-      // When multiple sheets exist, let the user know which one we picked so
-      // they can tell if we guessed wrong and need to reorder their workbook.
-      const sheetNote = parsed.totalSheets > 1
-        ? ` · sheet "${escapeHtml(parsed.sheetName)}" of ${parsed.totalSheets}`
-        : "";
-
-      els.fileInfo.innerHTML = `
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;color:var(--success)"><path d="M20 6L9 17l-5-5"/></svg>
-        <span class="name">${escapeHtml(file.name)}</span>
-        <span class="size">· ${formatBytes(file.size)} · ${parsed.rows.length} items (counted by Article No.)${sheetNote}</span>
-      `;
-      els.fileInfo.classList.remove("hidden");
-
-      if (!els.validityDate.value) els.validityDate.value = todayDDMMYYYY();
-      await tryMerge();
-    } catch (err) {
-      console.error(err);
-      state.p2pParsed = null;
-      els.fileInfo.classList.add("hidden");
-      els.supplierBanner.classList.add("hidden");
-      updateNewPriceWarning();
-      setStatus("error", `<h3>Could not read the P2P file</h3>${escapeHtml(err.message || String(err))}`);
-      setGenerateReady("empty");
-    }
   }
 
-  async function handleR1145File(file) {
-    clearStatus();
-    try {
-      const data = await file.arrayBuffer();
-      const rows = await runWithLoading(
-        "Parsing Report 1145 file…",
-        "Indexing articles for lookup.",
-        () => {
-          const wb = XLSX.read(data, { type: "array", cellDates: true });
-          const ws = wb.Sheets[wb.SheetNames[0]];
-          const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: true });
-          return parseReport1145(aoa);
-        }
-      );
-      if (rows.length === 0) throw new Error("No data rows found in the Report 1145 file.");
-      state.r1145Rows = rows;
-
-      els.r1145FileInfo.innerHTML = `
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;color:var(--success)"><path d="M20 6L9 17l-5-5"/></svg>
-        <span class="name">${escapeHtml(file.name)}</span>
-        <span class="size">· ${formatBytes(file.size)} · ${rows.length} article${rows.length === 1 ? "" : "s"}</span>
-      `;
-      els.r1145FileInfo.classList.remove("hidden");
-
-      await tryMerge();
-    } catch (err) {
-      console.error(err);
-      state.r1145Rows = null;
-      els.r1145FileInfo.classList.add("hidden");
-      setStatus("error", `<h3>Could not read the Report 1145 file</h3>${escapeHtml(err.message || String(err))}`);
-      setGenerateReady("empty");
-    }
-  }
-
-  // ---------- Merge + validate ----------
-  async function tryMerge() {
-    if (!state.p2pParsed || !state.r1145Rows) {
-      // Not both files yet — keep the button disabled.
-      const missing = [];
-      if (!state.p2pParsed) missing.push("P2P file");
-      if (!state.r1145Rows) missing.push("Report 1145 file");
-      setGenerateReady("empty", `Upload the ${missing.join(" and ")} to continue.`);
-      return;
-    }
-
-    const opts = {
-      useNewPriceCol: !!els.newPriceCheckbox.checked,
-      openLeadTime:   !!els.openLeadCheckbox.checked,
+  function getParams(companyId) {
+    return {
+      companyId,
+      supplierNo: els.supplierNo.value.trim(),
+      language: els.language.value.trim(),
+      validityDate: els.validityDate.value.trim(),
     };
-
-    const { rows, summary } = await runWithLoading(
-      "Merging P2P with Report 1145…",
-      `Matching ${state.p2pParsed.rows.length.toLocaleString()} P2P rows against ${state.r1145Rows.length.toLocaleString()} Report 1145 articles.`,
-      () => mergeP2PAndReport1145(state.r1145Rows, state.p2pParsed.rows, opts),
-    );
-
-    state.mergedRows = rows;
-    state.summary = summary;
-
-    // Re-run validation on the merged rows with dummy params (row-level only).
-    const { invalidCells, errors, warnings } = await runWithLoading(
-      "Validating merged data…",
-      `Checking ${rows.length.toLocaleString()} row${rows.length === 1 ? "" : "s"} against all rules.`,
-      () => validate(rows, { companyId: "000", supplierNo: "000000", language: "TH", validityDate: "01012026" })
-    );
-    state.invalidCells = invalidCells;
-
-    renderPreview(rows, invalidCells);
-
-    // Summary + status
-    const summaryHtml =
-      `<h3>Merge complete</h3>` +
-      `<ul>` +
-      `  <li><strong>${summary.matched}</strong> row${summary.matched === 1 ? "" : "s"} updated with P2P data</li>` +
-      `  <li><strong>${summary.p2pOnly}</strong> P2P-only item${summary.p2pOnly === 1 ? "" : "s"} (not in Report 1145 — will need manual enrichment)</li>` +
-      `  <li><strong>${summary.r1145Only}</strong> Report 1145 item${summary.r1145Only === 1 ? "" : "s"} appended with "No price update"</li>` +
-      `</ul>`;
-
-    if (errors.length) {
-      const list = errors.map((e) => `<li>${escapeHtml(e).replace(/\n/g, "<br>")}</li>`).join("");
-      const warnList = warnings.length
-        ? `<p style="margin-top:10px"><strong>Warnings:</strong></p><ul>${warnings.map((w) => `<li>${escapeHtml(w)}</li>`).join("")}</ul>`
-        : "";
-      setStatus("error",
-        summaryHtml +
-        `<p style="margin-top:10px"><strong>Validation failed — ${errors.length} issue${errors.length === 1 ? "" : "s"}:</strong></p><ul>${list}</ul>${warnList}`
-      );
-      setGenerateReady("error", errors.length);
-      return;
-    }
-
-    if (warnings.length) {
-      const list = warnings.map((w) => `<li>${escapeHtml(w)}</li>`).join("");
-      setStatus("warn", summaryHtml + `<p style="margin-top:10px"><strong>Warnings:</strong></p><ul>${list}</ul>`);
-    } else {
-      setStatus("success", summaryHtml + `<p style="margin-top:6px">All rows validated successfully.</p>`);
-    }
-    setGenerateReady("ready");
   }
 
-  // ---------- Preview ----------
-  const STATUS_PILL = {
-    "":                         { label: "—",                    cls: "pill-none" },
-    "Open lead time":           { label: "Open lead time",       cls: "pill-open" },
-    "Price from report 1145":   { label: "Price from Report 1145", cls: "pill-p1145" },
-    "No price update":          { label: "No price update",      cls: "pill-nopu" },
-    "P2P-only item":            { label: "P2P-only item",        cls: "pill-p2ponly" },
-  };
-
+  // ---------- Preview table ----------
   const PREVIEW_COLS = [
-    { key: "pos",          label: "#",         cls: "c-pos" },
-    { key: "itemNo",       label: "Item",      cls: "c-item" },
-    { key: "descGB",       label: "Description", cls: "c-en" },
-    { key: "ou",           label: "OU",        cls: "c-unit" },
-    { key: "__oldPrice",   label: "Old",       cls: "c-price" },
-    { key: "priceOU",      label: "New",       cls: "c-price" },
-    { key: "__diff",       label: "Diff",      cls: "c-cuou" },
-    { key: "availability", label: "LT",        cls: "c-avail" },
-    { key: "status",       label: "Status",    cls: "c-cust" },
+    { key: "pos",          label: "#",       cls: "c-pos" },
+    { key: "itemNo",       label: "Item",    cls: "c-item" },
+    { key: "descDE",       label: "German",  cls: "c-de" },
+    { key: "descGB",       label: "English", cls: "c-en" },
+    { key: "descExtra",    label: "Local",   cls: "c-local" },
+    { key: "ean",          label: "EAN",     cls: "c-ean" },
+    { key: "ou",           label: "OU",      cls: "c-unit" },
+    { key: "cu",           label: "CU",      cls: "c-unit" },
+    { key: "cuou",         label: "CU/OU",   cls: "c-cuou" },
+    { key: "priceOU",      label: "Price",   cls: "c-price" },
+    { key: "origin",       label: "Orig",    cls: "c-origin" },
+    { key: "availability", label: "Final lead", cls: "c-avail" },
+    { key: "customerId",   label: "Cust",    cls: "c-cust" },
   ];
 
-  // For the full-data modal — ALL fields + the P2P-specific columns
-  const FULL_COLS = [
-    { key: "pos", label: "#" },
-    { key: "itemNo", label: "Article no." },
-    { key: "ean", label: "EAN / GTIN" },
-    { key: "descGB", label: "Description (EN)" },
-    { key: "descExtra", label: "Description (Local)" },
-    { key: "ou", label: "OU" },
-    { key: "cu", label: "CU" },
-    { key: "cuou", label: "CU/OU" },
-    { key: "__oldPrice", label: "Old Price" },
-    { key: "priceOU", label: "New Price" },
-    { key: "__diff", label: "Diff" },
-    { key: "origin", label: "Origin" },
-    { key: "customsNo", label: "Customs No" },
-    { key: "availability", label: "Lead time" },
-    { key: "customerId", label: "Customer ID" },
-    {
-      key: "status",
-      label: "Status",
-      cellHtml: (r) => {
-        const info = STATUS_PILL[r.status || ""] || STATUS_PILL[""];
+  // Status pill style mapping for the R1145 tab. Empty string = normal row,
+  // rendered as a muted dash. Each named status gets a CSS class that maps
+  // to a color in style.css.
+  const STATUS_PILL = {
+    "":                          { label: "—",                         cls: "status-pill-empty" },
+    "Price update":              { label: "Price update",              cls: "status-pill-success" },
+    "Scaled price = 0":          { label: "Scaled price = 0",          cls: "status-pill-info" },
+    "No price in scaled price":  { label: "No price in scaled price",  cls: "status-pill-warn" },
+    "Both prices blank":         { label: "Both prices blank",         cls: "status-pill-danger" },
+    "Lead time update":          { label: "Lead time update",          cls: "status-pill-warn" },
+  };
+
+  // Render a row's statuses as one or more pills. Used by the Full Data modal.
+  function renderStatusPills(r) {
+    const list = Array.isArray(r.statuses) && r.statuses.length > 0 ? r.statuses : [""];
+    return list
+      .map((s) => {
+        const info = STATUS_PILL[s] || { label: s, cls: "status-pill-empty" };
         return `<span class="status-pill ${info.cls}">${escapeHtml(info.label)}</span>`;
-      },
+      })
+      .join(" ");
+  }
+
+  const FULL_COLS = [
+    { key: "pos",          label: "#" },
+    { key: "itemNo",       label: "Article no." },
+    { key: "ean",          label: "EAN / GTIN" },
+    { key: "manArtId",     label: "Mfg Item No" },
+    { key: "descDE",       label: "Name (DE)" },
+    { key: "descFR",       label: "Name (FR)" },
+    { key: "descIT",       label: "Name (IT)" },
+    { key: "descGB",       label: "Name (GB)" },
+    { key: "descExtra",    label: "Name (Local)" },
+    { key: "ou",           label: "OU" },
+    { key: "cu",           label: "CU" },
+    { key: "cuou",         label: "CU/OU" },
+    { key: "priceOU",      label: "Price" },
+    { key: "origin",       label: "Origin" },
+    { key: "customsNo",    label: "Customs No" },
+    { key: "leadTimeRaw",  label: "Source lead" },
+    { key: "availability", label: "Final lead (XML)" },
+    { key: "specUrl",      label: "Spec URL" },
+    { key: "offerStart",   label: "Offer Start" },
+    { key: "offerEnd",     label: "Offer End" },
+    { key: "customerId",   label: "Customer ID" },
+    {
+      key: "statuses",
+      label: "Status",
+      cellHtml: renderStatusPills,
+      cellClass: () => "status-cell",
     },
   ];
 
-  function fmtMoney(v) {
-    if (v === "" || v === null || v === undefined) return "—";
-    if (typeof v !== "number") return String(v);
-    return v.toFixed(2);
+  function displayValue(v) {
+    if (v === NA_MARKER) return "#N/A";
+    if (v === null || v === undefined) return "";
+    if (typeof v === "number") return Number.isInteger(v) ? String(v) : v.toFixed(2);
+    return String(v);
   }
 
-  function diffFor(r) {
-    const a = typeof r.__oldPrice === "number" ? r.__oldPrice : null;
-    const b = typeof r.priceOU === "number" ? r.priceOU : null;
-    if (a === null || b === null) return "—";
-    const d = b - a;
-    if (Math.abs(d) < 0.005) return "0.00";
-    return (d > 0 ? "+" : "") + d.toFixed(2);
-  }
-
-  // Map the empty-status pill to its preview label once, so the dropdown
-  // can refer to it consistently. VBA flows tag normal matched rows with "".
   function renderPreview(rows, invalidCells = new Map()) {
-    // Inject the diff into each row for preview/modal lookup
-    rows.forEach((r) => { r.__diff = diffFor(r); });
-
-    // The inline preview shows rows in their natural order (no status filter —
-    // that lives in the Show Full Data modal now). Keep original row index so
-    // invalidCells lookup stays correct when data is truncated at 200 rows.
     const showRows = rows.slice(0, 200);
     const head = `<thead><tr>${PREVIEW_COLS.map((c) => `<th class="${c.cls}">${c.label}</th>`).join("")}</tr></thead>`;
     const body = "<tbody>" + showRows.map((r, idx) => {
       const invalid = invalidCells.get(idx) || new Set();
       return "<tr>" + PREVIEW_COLS.map((c) => {
-        let shown;
-        if (c.key === "__oldPrice" || c.key === "priceOU") shown = fmtMoney(r[c.key]);
-        else if (c.key === "__diff") shown = diffFor(r);
-        else if (c.key === "status") {
-          const info = STATUS_PILL[r.status || ""] || STATUS_PILL[""];
-          return `<td class="${c.cls} status-cell"><span class="status-pill ${info.cls}">${escapeHtml(info.label)}</span></td>`;
-        }
-        else {
-          const v = r[c.key];
-          shown = v === NA_MARKER ? "#N/A" : (v === null || v === undefined ? "" : String(v));
-        }
-
-        // Paint the New-price cell with highlight colors based on status
-        let extraCls = "";
-        if (c.key === "priceOU") {
-          if (r.status === "Price from report 1145") extraCls = " price-fallback";
-          else if (r.status === "Open lead time" || (r.status === "" && r.__source === "matched")) extraCls = " price-updated";
-        }
-
-        const invalidCls = invalid.has(c.key) ? " invalid-cell" : "";
-        return `<td class="${c.cls}${invalidCls}${extraCls}" title="${escapeHtml(shown)}">${escapeHtml(shown)}</td>`;
+        const v = r[c.key];
+        const shown = displayValue(v);
+        const isNA = v === NA_MARKER;
+        const invalidCls = invalid.has(c.key) ? (isNA ? " invalid-cell na-cell" : " invalid-cell") : "";
+        return `<td class="${c.cls}${invalidCls}" title="${escapeHtml(shown)}">${escapeHtml(shown)}</td>`;
       }).join("") + "</tr>";
     }).join("") + "</tbody>";
     els.previewTable.innerHTML = head + body;
@@ -473,32 +212,94 @@ export function initP2PTab() {
     els.previewCard.classList.remove("hidden");
   }
 
-  // ---------- Generate XML ----------
-  function getParams(companyId) {
-    return {
-      companyId,
-      supplierNo: els.supplierNo.value.trim(),
-      language: els.language.value.trim(),
-      validityDate: els.validityDate.value.trim(),
-    };
+  // ---------- File handling ----------
+  async function handleFile(file) {
+    clearStatus();
+    state.fileName = file.name;
+    try {
+      const data = await file.arrayBuffer();
+      const rows = await runWithLoading(
+        "Parsing Excel file…",
+        "This may take a moment for large files.",
+        () => {
+          const wb = XLSX.read(data, { type: "array", cellDates: true });
+          const firstSheet = wb.SheetNames[0];
+          const ws = wb.Sheets[firstSheet];
+          const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, defval: "", raw: true });
+          return parseReport1145(aoa);
+        }
+      );
+
+      if (rows.length === 0) throw new Error("No data rows found below the header in this file.");
+      state.rows = rows;
+
+      els.fileInfo.innerHTML = `
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:18px;height:18px;color:var(--success)"><path d="M20 6L9 17l-5-5"/></svg>
+        <span class="name">${escapeHtml(file.name)}</span>
+        <span class="size">· ${formatBytes(file.size)} · ${rows.length} article${rows.length === 1 ? "" : "s"}</span>
+      `;
+      els.fileInfo.classList.remove("hidden");
+      renderPreview(rows);
+
+      if (!els.validityDate.value) els.validityDate.value = todayDDMMYYYY();
+      await runValidation(true);
+    } catch (err) {
+      console.error(err);
+      state.rows = [];
+      els.fileInfo.classList.add("hidden");
+      els.previewCard.classList.add("hidden");
+      setGenerateReady("empty");
+      setStatus("error", `<h3>Could not read the file</h3>${escapeHtml(err.message || String(err))}`);
+    }
   }
 
+  // ---------- Validation ----------
+  async function runValidation(auto = false) {
+    const params = auto
+      ? { companyId: "000", supplierNo: "000000", language: "TH", validityDate: "01012026" }
+      : getParams(companyPicker.getSelected()[0] || "000");
+
+    const result = await runWithLoading(
+      "Validating…",
+      `Checking ${state.rows.length.toLocaleString()} row${state.rows.length === 1 ? "" : "s"} against all rules.`,
+      () => {
+        const v = validate(state.rows, params);
+        renderPreview(state.rows, v.invalidCells);
+        state.invalidCells = v.invalidCells;
+        return v;
+      }
+    );
+    const { errors, warnings } = result;
+
+    if (errors.length) {
+      const list = errors.map((e) => `<li>${escapeHtml(e).replace(/\n/g, "<br>")}</li>`).join("");
+      const warnList = warnings.length
+        ? `<p style="margin-top:10px"><strong>Warnings:</strong></p><ul>${warnings.map((w) => `<li>${escapeHtml(w)}</li>`).join("")}</ul>`
+        : "";
+      setStatus("error", `<h3>Validation failed — ${errors.length} issue${errors.length === 1 ? "" : "s"}</h3><ul>${list}</ul>${warnList}`);
+      setGenerateReady("error", errors.length);
+      return false;
+    }
+
+    if (warnings.length) {
+      const list = warnings.map((w) => `<li>${escapeHtml(w)}</li>`).join("");
+      setStatus("warn", `<h3>Validation passed with warnings</h3><ul>${list}</ul>`);
+    } else {
+      setStatus("success", `<h3>Validation passed</h3>All ${state.rows.length} rows look good.`);
+    }
+    setGenerateReady("ready");
+    return true;
+  }
+
+  // ---------- Generate ----------
   async function runGenerate() {
     const companies = companyPicker.getSelected();
     if (companies.length === 0) {
       setStatus("error", `<h3>Select a Company ID</h3>Please select at least one WebShop Company ID.`);
       return;
     }
-
-    // Re-validate with real params so supplier-no/validity-date shape checks fire.
-    const validationParams = getParams(companies[0] || "000");
-    const { errors, warnings } = validate(state.mergedRows, validationParams);
-    if (errors.length) {
-      const list = errors.map((e) => `<li>${escapeHtml(e).replace(/\n/g, "<br>")}</li>`).join("");
-      setStatus("error", `<h3>Validation failed — ${errors.length} issue${errors.length === 1 ? "" : "s"}</h3><ul>${list}</ul>`);
-      setGenerateReady("error", errors.length);
-      return;
-    }
+    const ok = await runValidation(false);
+    if (!ok) return;
 
     const createdFiles = [];
     try {
@@ -507,8 +308,8 @@ export function initP2PTab() {
         const params = getParams(companyId);
         const result = await runWithLoading(
           `Generating XML ${i + 1} of ${companies.length}…`,
-          `Company ${companyId} · ${state.mergedRows.length.toLocaleString()} article${state.mergedRows.length === 1 ? "" : "s"}`,
-          () => generateXml(state.mergedRows, params)
+          `Company ${companyId} · ${state.rows.length.toLocaleString()} article${state.rows.length === 1 ? "" : "s"}`,
+          () => generateXml(state.rows, params)
         );
         const { xml, filename } = result;
         downloadBlob("\uFEFF" + xml, filename, "application/xml;charset=utf-8");
@@ -518,7 +319,8 @@ export function initP2PTab() {
       const fileList = createdFiles.map((f) => `<li><code>${escapeHtml(f)}</code></li>`).join("");
       setStatus("success",
         `<h3>XML generated for ${createdFiles.length} compan${createdFiles.length === 1 ? "y" : "ies"}</h3>` +
-        `<ul>${fileList}</ul>`
+        `<ul>${fileList}</ul>` +
+        `<p class="muted small" style="margin-top:8px">If your browser only downloaded one file, check its download settings — it may be blocking multiple automatic downloads.</p>`
       );
     } catch (err) {
       console.error(err);
@@ -527,108 +329,62 @@ export function initP2PTab() {
   }
 
   // ---------- Event wiring ----------
-  // P2P drop zone
   els.dropZone.addEventListener("click", () => els.fileInput.click());
   els.dropZone.addEventListener("dragover", (e) => { e.preventDefault(); els.dropZone.classList.add("dragging"); });
   els.dropZone.addEventListener("dragleave", () => els.dropZone.classList.remove("dragging"));
   els.dropZone.addEventListener("drop", (e) => {
     e.preventDefault(); els.dropZone.classList.remove("dragging");
-    const f = e.dataTransfer.files[0]; if (f) handleP2PFile(f);
+    const f = e.dataTransfer.files[0]; if (f) handleFile(f);
   });
-  els.fileInput.addEventListener("change", (e) => { const f = e.target.files[0]; if (f) handleP2PFile(f); });
+  els.fileInput.addEventListener("change", (e) => { const f = e.target.files[0]; if (f) handleFile(f); });
 
-  // R1145 drop zone
-  els.r1145Drop.addEventListener("click", () => els.r1145FileInput.click());
-  els.r1145Drop.addEventListener("dragover", (e) => { e.preventDefault(); els.r1145Drop.classList.add("dragging"); });
-  els.r1145Drop.addEventListener("dragleave", () => els.r1145Drop.classList.remove("dragging"));
-  els.r1145Drop.addEventListener("drop", (e) => {
-    e.preventDefault(); els.r1145Drop.classList.remove("dragging");
-    const f = e.dataTransfer.files[0]; if (f) handleR1145File(f);
-  });
-  els.r1145FileInput.addEventListener("change", (e) => { const f = e.target.files[0]; if (f) handleR1145File(f); });
-
-  // Language picker
-  els.langPick.querySelectorAll(".lang-btn").forEach((b) => {
-    b.addEventListener("click", () => {
-      els.langPick.querySelectorAll(".lang-btn").forEach((x) => x.classList.toggle("active", x === b));
-      state.lang = b.dataset.lang === "VN" ? "VN" : "EN";
-      renderHeaderBox();
-      // If P2P file is already loaded, re-parse it with the new language
-      // so the user can switch without re-uploading.
-      if (els.fileInput.files && els.fileInput.files[0]) {
-        handleP2PFile(els.fileInput.files[0]);
-      }
-    });
-  });
-
-  // Header-example modal
-  els.showHeadersBtn.addEventListener("click", () => {
-    renderHeaderBox();
-    els.hdrModal.classList.toggle("hidden");
-  });
-  els.hdrClose.addEventListener("click", () => els.hdrModal.classList.add("hidden"));
-  els.hdrCopyBtn.addEventListener("click", async () => {
-    try {
-      await navigator.clipboard.writeText(els.hdrBox.innerText);
-      const orig = els.hdrCopyBtn.textContent;
-      els.hdrCopyBtn.textContent = "✓ Copied";
-      setTimeout(() => { els.hdrCopyBtn.textContent = orig; }, 1200);
-    } catch (_) {
-      // No clipboard access — do nothing loud; user can still copy manually.
-    }
-  });
-
-  // Toggle changes trigger re-merge (and re-parse if needed, because NEW PRICE
-  // is a required column when the toggle is on).
-  els.newPriceCheckbox.addEventListener("change", async () => {
-    renderHeaderBox();
-    if (els.fileInput.files && els.fileInput.files[0]) {
-      await handleP2PFile(els.fileInput.files[0]);
-    } else {
-      updateNewPriceWarning();
-      await tryMerge();
-    }
-  });
-  els.openLeadCheckbox.addEventListener("change", () => { tryMerge(); });
-
-  // Params & generate
   els.generateBtn.addEventListener("click", runGenerate);
   els.resetBtn.addEventListener("click", resetAll);
+  els.templateBtn.addEventListener("click", (e) => {
+    e.preventDefault();
+    try {
+      downloadTemplate();
+      setStatus("success", `<h3>Template downloaded</h3>Open <code>Report_1145_Template.xlsx</code>, fill in rows starting from row 5, then drop it onto the upload area above.`);
+    } catch (err) {
+      console.error(err);
+      setStatus("error", `<h3>Could not create template</h3>${escapeHtml(err.message || String(err))}`);
+    }
+  });
 
   els.showFullBtn.addEventListener("click", () => {
     openFullDataModal({
-      rows: state.mergedRows,
+      rows: state.rows,
       columns: FULL_COLS,
       invalidCells: state.invalidCells,
       statusPillMap: STATUS_PILL,
-      exportFilename: "P2P_Merge_Export",
-      exportSheetName: "P2P Merge",
+      exportFilename: "Report_1145_Export",
+      exportSheetName: "Report 1145",
     });
   });
 
   // Re-run param-level validation whenever a Step-3 input changes. Without
-  // this, a parameter-level error (B.E. year, missing/short supplier no.,
-  // unselected company) leaves Generate disabled even after the user fixes
-  // the field. Skipped while no merged data exists yet.
+  // this, a parameter-level error (B.E. year, missing company, wrong supplier
+  // no. length) leaves the Generate button disabled even after the user fixes
+  // the field. Skipped when no file is loaded yet.
   let revalidateTimer = null;
   function revalidateParams() {
-    if (!state.mergedRows.length) return;
+    if (state.rows.length === 0) return;
     const companies = companyPicker.getSelected();
     const validationParams = getParams(companies[0] || "000");
-    const { errors } = validate(state.mergedRows, validationParams);
+    const { errors } = validate(state.rows, validationParams);
     if (errors.length) {
       // Show the actual reason inline so the user doesn't have to scroll up.
+      // For B.E. year, this surfaces the full conversion suggestion (e.g.
+      // "for 06/05/2569 use 06052026"); for shape errors, a short message.
       const hint = summarizeErrorForHint(errors);
       setGenerateReady("error", hint || errors.length);
     } else {
-      // Param errors are now clear; restore the previous "ready" gating.
-      // We don't re-render the full status panel here — the user already saw
-      // the row-level result earlier from tryMerge(). Just unlock the button.
       setGenerateReady("ready");
     }
   }
   function scheduleRevalidate() {
     clearTimeout(revalidateTimer);
+    // Small debounce so typing "06052026" doesn't fire validation 8 times.
     revalidateTimer = setTimeout(revalidateParams, 250);
   }
   els.supplierNo.addEventListener("input", scheduleRevalidate);
@@ -639,6 +395,5 @@ export function initP2PTab() {
   restrictToDigits(els.supplierNo);
   restrictToDigits(els.validityDate);
   els.validityDate.placeholder = todayDDMMYYYY();
-  renderHeaderBox();
   setGenerateReady("empty");
 }
