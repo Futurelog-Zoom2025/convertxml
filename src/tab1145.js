@@ -357,6 +357,8 @@ export function initR1145Tab() {
       columns: FULL_COLS,
       invalidCells: state.invalidCells,
       statusPillMap: STATUS_PILL,
+      exportFilename: "Report_1145_Export",
+      exportSheetName: "Report 1145",
     });
   });
 
