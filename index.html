@@ -16,6 +16,7 @@
       <nav class="tabs" role="tablist">
         <button class="tab active" id="tabBtn1145" role="tab" aria-selected="true" data-tab="r1145">Convert XML from 1145 report</button>
         <button class="tab" id="tabBtnP2P" role="tab" aria-selected="false" data-tab="p2p">Convert XML from P2P report</button>
+        <button class="tab" id="tabBtnXml" role="tab" aria-selected="false" data-tab="xml">Convert XML to report 1145</button>
       </nav>
 
       <!-- ─────────── TAB 1: Report 1145 ─────────── -->
@@ -265,6 +266,56 @@
         </section>
       </div>
 
+      <!-- ─────────── TAB 3: XML → Report 1145 ─────────── -->
+      <div class="tab-panel" id="panelXml" role="tabpanel">
+        <section class="card">
+          <div class="card-header-row">
+            <h2><span class="step">1</span> Upload your FUTURELOG <code>.xml</code> file</h2>
+            <button id="xmlResetBtn" class="btn btn-ghost btn-sm">Reset</button>
+          </div>
+          <div class="drop-zone" id="xmlDropZone">
+            <input type="file" id="xmlFileInput" accept=".xml" hidden />
+            <div class="drop-inner">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="icon-lg"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+              <p><strong>Click to select</strong> or drag &amp; drop a <code>.xml</code> file (the kind this app generates)</p>
+              <p class="muted small">The file is processed entirely in your browser — nothing is uploaded to any server.</p>
+            </div>
+          </div>
+          <div id="xmlFileInfo" class="file-info hidden"></div>
+          <div id="xmlStatus" class="status hidden"></div>
+        </section>
+
+        <section class="card hidden" id="xmlDecodedCard">
+          <h2 style="margin-top:0">Decoded from filename</h2>
+          <div class="decoded-grid">
+            <div class="decoded-item">
+              <p class="decoded-label">Division</p>
+              <p class="decoded-value" id="xmlDecodedDivision">—</p>
+            </div>
+            <div class="decoded-item">
+              <p class="decoded-label">Supplier number</p>
+              <p class="decoded-value" id="xmlDecodedSupplier">—</p>
+            </div>
+            <div class="decoded-item">
+              <p class="decoded-label">Validity date</p>
+              <p class="decoded-value" id="xmlDecodedDate">—</p>
+            </div>
+          </div>
+          <p class="decoded-error hidden" id="xmlDecodedError"></p>
+        </section>
+
+        <section class="card hidden" id="xmlActionCard">
+          <h2><span class="step">2</span> Download Report 1145</h2>
+          <p class="muted small" style="margin-top:0">
+            The downloaded file follows the standard Report 1145 layout. <strong>Price per order unit</strong> is filled from the XML's <code>PRCOU</code> field; the <strong>Scaled price</strong> column is left blank. A <strong>Customer ID</strong> column is appended at the end so multi-tier pricing isn't lost.
+          </p>
+          <div class="generate-row">
+            <button id="xmlGenerateBtn" class="btn btn-primary" disabled>Download Report 1145.xlsx</button>
+            <p id="xmlGenHint" class="gen-hint">Upload an XML file first.</p>
+          </div>
+        </section>
+      </div>
+
       <footer>
         <p class="muted small">
           Based on the validation logic of <code>Importlist_TH_XML (For MDM)</code>.
@@ -294,6 +345,25 @@
         <p class="muted small" id="fullDataSummary" style="padding:0 20px;margin:0 0 8px"></p>
         <div class="full-modal-body">
           <table id="fullDataTable" class="full-table"></table>
+        </div>
+      </div>
+    </div>
+
+    <div id="newsModal" class="news-modal hidden" role="dialog" aria-modal="true" aria-labelledby="newsModalTitle">
+      <div class="news-modal-inner">
+        <div class="news-modal-badge">NEW</div>
+        <h2 id="newsModalTitle">New feature: Convert XML to Report 1145</h2>
+        <p>
+          You can now go the other direction! Upload a FUTURELOG XML file and
+          convert it back into a Report 1145 Excel sheet — complete with
+          autofilter enabled on every column for easy sorting and filtering.
+        </p>
+        <p class="muted small" style="margin-top:8px">
+          Open the <strong>"Convert XML to report 1145"</strong> tab to try it.
+        </p>
+        <div class="news-modal-actions">
+          <button type="button" id="newsModalTryBtn" class="btn btn-primary btn-sm">Try it now</button>
+          <button type="button" id="newsModalCloseBtn" class="btn btn-ghost btn-sm">Got it</button>
         </div>
       </div>
     </div>
