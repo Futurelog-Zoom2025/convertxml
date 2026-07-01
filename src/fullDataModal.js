@@ -115,7 +115,9 @@ function render() {
     const arrow = !isSorted ? "⇅" : (view.sortDir === "asc" ? "↑" : "↓");
     const ariaSort = !isSorted ? "none" : (view.sortDir === "asc" ? "ascending" : "descending");
     const sortedCls = isSorted ? " sorted" : "";
-    return `<th class="sortable${sortedCls}" data-col="${c.key}" aria-sort="${ariaSort}" title="Click to sort">` +
+    // Per-column header styling (e.g. red "from Makro", yellow "from VAT calc").
+    const hdrCls = c.headerClass ? ` ${c.headerClass}` : "";
+    return `<th class="sortable${sortedCls}${hdrCls}" data-col="${c.key}" aria-sort="${ariaSort}" title="Click to sort">` +
       `<span class="th-label">${escapeHtml(c.label)}</span>` +
       `<span class="sort-arrow">${arrow}</span>` +
       `</th>`;

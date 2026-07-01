@@ -3,6 +3,7 @@
 
 import { initR1145Tab } from "./tab1145.js";
 import { initP2PTab } from "./tabP2P.js";
+import { initMakroTab } from "./tabMakro.js";
 import { initXmlToR1145Tab } from "./tabXmlToR1145.js";
 
 // ---------- Tab switching ----------
@@ -10,6 +11,7 @@ const tabs = document.querySelectorAll(".tabs .tab");
 const panels = {
   r1145: document.getElementById("panel1145"),
   p2p:   document.getElementById("panelP2P"),
+  makro: document.getElementById("panelMakro"),
   xml:   document.getElementById("panelXml"),
 };
 
@@ -32,6 +34,7 @@ tabs.forEach((tab) => {
 // between tabs. Inactive panels are just hidden via CSS, not unmounted.
 initR1145Tab();
 initP2PTab();
+initMakroTab();
 initXmlToR1145Tab();
 
 // ---------- First-visit news popup ----------

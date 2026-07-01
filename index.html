@@ -3,19 +3,24 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Report 1145 → XML Converter</title>
+    <title>XML Converter · FutureLog</title>
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
     <div class="page">
       <header class="hero">
-        <h1>Report 1145 → XML Converter</h1>
+        <div class="brand-lockup">
+          <span class="brand-mark" aria-hidden="true">FL</span>
+          <span class="brand-wordmark">FutureLog <span class="brand-sub">Master Data Tools</span></span>
+        </div>
+        <h1>XML Converter</h1>
         <p class="sub">Upload Excel and generate a validated FUTURELOG XML file</p>
       </header>
 
       <nav class="tabs" role="tablist">
         <button class="tab active" id="tabBtn1145" role="tab" aria-selected="true" data-tab="r1145">Convert XML from 1145 report</button>
         <button class="tab" id="tabBtnP2P" role="tab" aria-selected="false" data-tab="p2p">Convert XML from P2P report</button>
+        <button class="tab" id="tabBtnMakro" role="tab" aria-selected="false" data-tab="makro">Convert XML from Makro file</button>
         <button class="tab" id="tabBtnXml" role="tab" aria-selected="false" data-tab="xml">Convert XML to report 1145</button>
       </nav>
 
@@ -262,6 +267,135 @@
           <div class="generate-row">
             <button id="p2pGenerateBtn" class="btn btn-primary" disabled>Generate &amp; Download XML</button>
             <p id="p2pGenHint" class="gen-hint">Upload both files first.</p>
+          </div>
+        </section>
+      </div>
+
+      <!-- ─────────── TAB: Makro ─────────── -->
+      <div class="tab-panel" id="panelMakro" role="tabpanel">
+        <section class="card">
+          <div class="card-header-row">
+            <h2><span class="step">1</span> Upload the Makro price-list file</h2>
+            <button id="makroResetBtn" class="btn btn-ghost btn-sm">Reset</button>
+          </div>
+
+          <div class="grid" style="margin-bottom:14px;">
+            <label>
+              <span>Headers are Thai <em>(no language selection needed)</em></span>
+              <button type="button" id="makroShowHeadersBtn" class="btn btn-ghost btn-sm" style="justify-self:start;">
+                📋  Show expected headers
+              </button>
+            </label>
+          </div>
+
+          <div class="drop-zone" id="makroDropZone">
+            <input type="file" id="makroFileInput" accept=".xls,.xlsx,.xlsm,.xlsb" hidden />
+            <div class="drop-inner">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="icon-lg"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+              <p><strong>Click to select</strong> or drag &amp; drop the Makro <code>.xls</code> / <code>.xlsx</code> file</p>
+              <p class="muted small">Headers on row 1, data from row 2. Processed entirely in your browser — nothing is uploaded.</p>
+              <p class="muted small lang-note">Accepts: TH</p>
+            </div>
+          </div>
+          <div id="makroFileInfo" class="file-info hidden"></div>
+
+          <div id="makroHdrModal" class="hdr-modal hidden">
+            <div class="hdr-modal-head">
+              <h3>Expected Makro headers (row 1)</h3>
+              <button type="button" id="makroHdrClose" class="hdr-close" aria-label="Close">✕</button>
+            </div>
+            <p class="muted small" style="margin: 0 0 8px">
+              ⚠ The highlighted columns are required. <code>สถานะ</code> and <code>Art. Group</code> are optional.
+              (<code>ราคาขาย (In. VAT)</code> also accepts the wording <code>ราคาขาย (รวม VAT)</code>.)
+            </p>
+            <pre class="hdr-box" id="makroHdrBox"></pre>
+            <button type="button" id="makroHdrCopyBtn" class="btn btn-ghost btn-sm">Copy to clipboard</button>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2><span class="step">2</span> Upload the matching Report 1145 file</h2>
+          <div class="drop-zone" id="makroR1145DropZone">
+            <input type="file" id="makroR1145FileInput" accept=".xls,.xlsx,.xlsm" hidden />
+            <div class="drop-inner">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" class="icon-lg"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 17v2a2 2 0 002 2h12a2 2 0 002-2v-2"/></svg>
+              <p><strong>Click to select</strong> or drag &amp; drop the Report 1145 file</p>
+              <p class="muted small">Each Report 1145 <strong>Article no.</strong> is matched to the Makro <strong>รหัสสินค้า</strong> to pull in the new price.</p>
+              <p class="muted small lang-note">Accepts: EN, TH, VN</p>
+            </div>
+          </div>
+          <div id="makroR1145FileInfo" class="file-info hidden"></div>
+        </section>
+
+        <div id="makroMergeStatus" class="status hidden" style="margin-bottom:20px"></div>
+
+        <section class="card hidden" id="makroPreviewCard">
+          <div class="preview-header">
+            <div>
+              <h2 style="margin-bottom:4px">Data Preview</h2>
+              <p class="muted small" id="makroPreviewSummary" style="margin:0"></p>
+            </div>
+            <div style="display:flex; gap:8px; align-items:center; flex-wrap:wrap;">
+              <button type="button" id="makroUnmatchedBtn" class="btn btn-ghost btn-sm" disabled title="Makro products with no matching Report 1145 article">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                Makro not in 1145
+              </button>
+              <button type="button" id="makroShowFullBtn" class="btn btn-ghost btn-sm">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;vertical-align:-2px;margin-right:4px"><path d="M3 8V3h5M21 8V3h-5M3 16v5h5M21 16v5h-5"/></svg>
+                Show Full Data
+              </button>
+            </div>
+          </div>
+          <div class="preview-table-wrap">
+            <table id="makroPreviewTable" class="preview-table"></table>
+          </div>
+          <div class="p2p-legend">
+            <span><span class="sw sw-updated"></span> Price updated from Makro (lead time 1)</span>
+            <span><span class="sw sw-nopu"></span> No Information — kept Report 1145 price (lead time 0)</span>
+            <span><span class="sw sw-fallback"></span> Discontinued in Makro — kept Report 1145 price (lead time 0)</span>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2><span class="step">3</span> XML Parameters &amp; Generate</h2>
+          <div class="grid">
+            <label>
+              <span>WebShop Company ID <em>(select one or more)</em></span>
+              <div class="multiselect" id="makroCompanyMultiselect">
+                <button type="button" class="multiselect-btn" id="makroCompanyBtn">
+                  <span id="makroCompanyBtnLabel" class="muted">Select companies…</span>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="caret-icon"><path d="M6 9l6 6 6-6"/></svg>
+                </button>
+                <div class="multiselect-menu hidden" id="makroCompanyMenu">
+                  <div class="multiselect-menu-actions">
+                    <button type="button" class="link-btn" id="makroSelectAllCompanies">Select all</button>
+                    <button type="button" class="link-btn" id="makroClearAllCompanies">Clear</button>
+                  </div>
+                  <div class="multiselect-options" id="makroCompanyOptions"></div>
+                </div>
+              </div>
+            </label>
+            <label>
+              <span>Supplier Number <em>(6 digits)</em></span>
+              <input type="text" id="makroSupplierNo" maxlength="6" placeholder="e.g. 123456" inputmode="numeric" pattern="[0-9]{6}" />
+            </label>
+            <label>
+              <span>Language</span>
+              <select id="makroLanguage">
+                <option value="AU">AU</option><option value="DE">DE</option><option value="FR">FR</option>
+                <option value="IT">IT</option><option value="GB">GB</option><option value="TR">TR</option>
+                <option value="VN">VN</option><option value="TH" selected>TH</option><option value="JP">JP</option>
+                <option value="CN">CN</option><option value="HK">HK</option><option value="NL">NL</option>
+              </select>
+            </label>
+            <label>
+              <span>Validity Date <em>(DDMMYYYY · C.E. only — not พ.ศ.)</em></span>
+              <input type="text" id="makroValidityDate" maxlength="8" placeholder="31122026" inputmode="numeric" pattern="[0-9]{8}" />
+            </label>
+          </div>
+          <div class="generate-row">
+            <button id="makroGenerateBtn" class="btn btn-primary" disabled>Generate &amp; Download XML</button>
+            <p id="makroGenHint" class="gen-hint">Upload both files first.</p>
           </div>
         </section>
       </div>
