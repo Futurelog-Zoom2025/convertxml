@@ -40,7 +40,7 @@ initXmlToR1145Tab();
 // ---------- First-visit news popup ----------
 // Bump the version string when announcing a new feature so previously-dismissed
 // users see the new announcement once.
-const NEWS_KEY = "fl_news_seen_v1_xml_to_1145";
+const NEWS_KEY = "fl_news_seen_v2_makro";
 const newsModal = document.getElementById("newsModal");
 if (newsModal && !localStorage.getItem(NEWS_KEY)) {
   newsModal.classList.remove("hidden");
@@ -52,7 +52,7 @@ if (newsModal && !localStorage.getItem(NEWS_KEY)) {
 
   document.getElementById("newsModalCloseBtn")?.addEventListener("click", dismiss);
   document.getElementById("newsModalTryBtn")?.addEventListener("click", () => {
-    document.getElementById("tabBtnXml")?.click();
+    document.getElementById("tabBtnMakro")?.click();
     dismiss();
   });
   newsModal.addEventListener("click", (e) => {
