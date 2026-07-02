@@ -26,6 +26,7 @@ export const MAKRO_STATUS = {
   MATCHED:      "Price updated from Makro",
   NO_INFO:      "No Information",
   DISCONTINUED: "Discontinued",
+  NO_PRICE:     "No Makro price",
 };
 
 function r1145PriceOf(r) {
@@ -38,6 +39,14 @@ function r1145PriceOf(r) {
 // etc. Anything else (active, blank, missing) is treated as normal/active.
 function isDiscontinued(makroRow) {
   return String(makroRow?.status || "").trim().toLowerCase().includes("discontinu");
+}
+
+// True when the Makro row has a usable (> 0) computed new price. A blank/zero
+// In-VAT price yields newPrice ≤ 0 (or negative when a VAT amount is present);
+// such rows must NOT overwrite the Report 1145 price.
+function hasUsableMakroPrice(makroRow) {
+  const p = makroRow?.newPrice;
+  return typeof p === "number" && Number.isFinite(p) && p > 0;
 }
 
 // The Makro-derived display columns (raw file values + VAT calc), shared by the
@@ -91,13 +100,14 @@ function buildMatchedRow({ r1145Row, makroRow, pos }) {
   };
 }
 
-// Discontinued row: the Makro code matched, but its สถานะ says Discontinue.
-// Per the business rule, DON'T apply the Makro price — keep the Report 1145
-// price and close the lead time to "0". Makro/VAT columns are still populated
-// (and highlighted) for reference, but __newPrice is left blank since nothing
-// was applied. Stays __source "matched" so the red/yellow column highlighting
-// still fires; the __discontinued flag drives the summary/warning counts.
-function buildDiscontinuedRow({ r1145Row, makroRow, pos }) {
+// Matched code, but the Makro price is NOT applied — keep the Report 1145 price
+// and close the lead time to "0". Used for two cases:
+//   • Discontinue    — สถานะ says the item is discontinued
+//   • No Makro price — the Makro row has no usable price (≤ 0 / blank)
+// Makro/VAT columns are still populated (and highlighted) for reference, but
+// __newPrice is blank since nothing was applied. Stays __source "matched" so the
+// red/yellow highlighting fires; `extra` carries the flag driving the counts.
+function buildKeepR1145Row({ r1145Row, makroRow, pos, status, extra }) {
   const oldPrice = r1145PriceOf(r1145Row);
   return {
     ...r1145Row,
@@ -113,9 +123,9 @@ function buildDiscontinuedRow({ r1145Row, makroRow, pos }) {
     __newPrice:   "",                      // Makro price NOT applied
     __diff:       "",
     ...makroDisplayFields(makroRow),
-    status:   MAKRO_STATUS.DISCONTINUED,
+    status,
     __source: "matched",
-    __discontinued: true,
+    ...extra,
   };
 }
 
@@ -175,7 +185,17 @@ export function mergeMakroAndReport1145(r1145Rows, makroRows) {
     const m = key ? makroByCode.get(key) : undefined;
     if (m) {
       if (isDiscontinued(m)) {
-        merged.push(buildDiscontinuedRow({ r1145Row: r, makroRow: m, pos: pos++ }));
+        // Discontinued in Makro → keep the 1145 price, lead time 0.
+        merged.push(buildKeepR1145Row({
+          r1145Row: r, makroRow: m, pos: pos++,
+          status: MAKRO_STATUS.DISCONTINUED, extra: { __discontinued: true },
+        }));
+      } else if (!hasUsableMakroPrice(m)) {
+        // Makro price ≤ 0 / blank → don't overwrite; keep the 1145 price, lead time 0.
+        merged.push(buildKeepR1145Row({
+          r1145Row: r, makroRow: m, pos: pos++,
+          status: MAKRO_STATUS.NO_PRICE, extra: { __noMakroPrice: true },
+        }));
       } else {
         merged.push(buildMatchedRow({ r1145Row: r, makroRow: m, pos: pos++ }));
       }
@@ -198,10 +218,12 @@ export function mergeMakroAndReport1145(r1145Rows, makroRows) {
 
   const summary = {
     total:        merged.length,
-    // "matched" = price actually updated (found AND active). Discontinued rows
-    // matched too but kept the 1145 price, so they're counted separately.
-    matched:      merged.filter((m) => m.__source === "matched" && !m.__discontinued).length,
+    // "matched" = price actually updated (found, active, and had a usable price).
+    // Discontinued and no-price rows matched too but kept the 1145 price, so
+    // they're counted separately.
+    matched:      merged.filter((m) => m.__source === "matched" && !m.__discontinued && !m.__noMakroPrice).length,
     discontinued: merged.filter((m) => m.__discontinued).length,
+    noPrice:      merged.filter((m) => m.__noMakroPrice).length,
     noInfo:       merged.filter((m) => m.__source === "no-info").length,
     makroOnly,
   };

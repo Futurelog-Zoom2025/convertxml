@@ -269,9 +269,18 @@ export function initMakroTab() {
         `kept the Report 1145 price and closed lead time (0).`
       );
     }
+    if (summary.noPrice > 0) {
+      cleanWarnings.push(
+        `${summary.noPrice} row(s) had no usable Makro price (≤ 0 / blank) — ` +
+        `kept the Report 1145 price and closed lead time (0).`
+      );
+    }
 
     const discontinuedNote = summary.discontinued > 0
       ? `  <li><strong>${summary.discontinued}</strong> article${summary.discontinued === 1 ? "" : "s"} marked <strong>Discontinue</strong> in Makro (kept the Report 1145 price, lead time 0)</li>`
+      : "";
+    const noPriceNote = summary.noPrice > 0
+      ? `  <li><strong>${summary.noPrice}</strong> article${summary.noPrice === 1 ? "" : "s"} with <strong>no usable Makro price</strong> (≤ 0 / blank) (kept the Report 1145 price, lead time 0)</li>`
       : "";
     const makroOnlyNote = summary.makroOnly > 0
       ? `  <li><strong>${summary.makroOnly}</strong> Makro price${summary.makroOnly === 1 ? "" : "s"} had no matching Report 1145 article (ignored — not in output)</li>`
@@ -282,6 +291,7 @@ export function initMakroTab() {
       `  <li><strong>${summary.matched}</strong> article${summary.matched === 1 ? "" : "s"} updated with the Makro price (lead time set to 1)</li>` +
       `  <li><strong>${summary.noInfo}</strong> article${summary.noInfo === 1 ? "" : "s"} with "No Information" (kept the Report 1145 price, lead time 0)</li>` +
       discontinuedNote +
+      noPriceNote +
       makroOnlyNote +
       `</ul>`;
 
@@ -313,6 +323,7 @@ export function initMakroTab() {
     "Price updated from Makro":  { label: "Price updated", cls: "pill-open" },
     "No Information":            { label: "No Information", cls: "pill-nopu" },
     "Discontinued":              { label: "Discontinued",  cls: "pill-p1145" },
+    "No Makro price":            { label: "No Makro price", cls: "pill-p2ponly" },
   };
 
   const PREVIEW_COLS = [
@@ -440,7 +451,7 @@ export function initMakroTab() {
         let extraCls = "";
         if (c.key === "priceOU") {
           if (r.status === "Price updated from Makro") extraCls = " price-updated";
-          else if (r.status === "No Information" || r.status === "Discontinued") extraCls = " price-fallback";
+          else if (r.status === "No Information" || r.status === "Discontinued" || r.status === "No Makro price") extraCls = " price-fallback";
         }
 
         const invalidCls = invalid.has(c.key) ? " invalid-cell" : "";
