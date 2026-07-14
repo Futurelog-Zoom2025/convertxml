@@ -8,7 +8,7 @@ export const $ = (sel) => document.querySelector(sel);
 // case anyone has bookmarked the order.
 export const COMPANY_IDS = [
   "169", "215", "233", "247", "278", "257", "262", "230", "315",
-  "101", "265", "225", "296", "285", "192",
+  "101", "265", "225", "296", "285", "192", "324",
 ];
 
 export function escapeHtml(s) {
