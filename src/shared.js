@@ -2,13 +2,11 @@
 
 export const $ = (sel) => document.querySelector(sel);
 
-// Exact list and order requested by the business.
+// WebShop Company IDs, sorted ascending for easier scanning in the picker.
 // Duplicates in the source list (230 appeared twice) are deduped here.
-// New IDs are appended at the end to avoid shifting existing positions in
-// case anyone has bookmarked the order.
 export const COMPANY_IDS = [
-  "169", "215", "233", "247", "278", "257", "262", "230", "315",
-  "101", "265", "225", "296", "285", "192", "324", "255",
+  "101", "169", "192", "215", "225", "230", "233", "247", "255",
+  "257", "262", "265", "278", "285", "296", "315", "324",
 ];
 
 export function escapeHtml(s) {
